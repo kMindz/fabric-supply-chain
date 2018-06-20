@@ -9,21 +9,30 @@ import (
 	"time"
 	"encoding/json"
 	"fmt"
+	"strconv"
 )
 
 var logger = shim.NewLogger("SimpleChaincode")
 
-type OrgData [] Product
+var productState = map[int]string{
+	1: "Registered",
+	2: "Active",
+	3: "Decision-making",
+	4: "Inactive",
+}
+
+type CompositeKey struct {
+	ID          string `json:"id"`
+	Org         string `json:"org"`
+	ProductName string `json:"productName"`
+}
 
 type Product struct {
-	ID          string `json:"productID"`
-	ObjectType  string `json:"productObjectType"`
 	Name        string `json:"productName"`
 	Desc        string `json:"productDesc"`
-	State       string `json:"productState"`
+	State       int    `json:"productState"`
 	Org         string `json:"productOrg"`
-	DateCreated time.Time
-	DateUpdated time.Time
+	DateUpdated uint   `json:"productDateUpdated"`
 }
 
 // SimpleChaincode example simple Chaincode implementation
@@ -76,17 +85,16 @@ func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) p
 	}
 
 	fmt.Println("Add product")
-	if len(args[0]) <= 0 {
-		return shim.Error("1st argument must be a non-empty string")
+	
+	for k, v := range args {
+		if len(v) <= 0 {
+			return shim.Error(strconv.Itoa(k+1) + "st argument must be a non-empty string")
+		}
 	}
-	if len(args[1]) <= 0 {
-		return shim.Error("2nd argument must be a non-empty string")
-	}
-	if len(args[2]) <= 0 {
-		return shim.Error("3rd argument must be a non-empty string")
-	}
-	if len(args[3]) <= 0 {
-		return shim.Error("4th argument must be a non-empty string")
+
+	_, legalState := mapkey(productState, args[2])
+	if !legalState {
+		return shim.Error("Not legal product state")
 	}
 
 	productName := args[0]
@@ -201,6 +209,17 @@ func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string)
 	}
 
 	return shim.Success(productBytes)
+}
+
+var mapkey = func(m map[int]string, value string) (key int, ok bool) {
+	for k, v := range m {
+		if v == value {
+			key = k
+			ok = true
+			return
+		}
+	}
+	return
 }
 
 var getCreator = func(certificate []byte) (string, string) {
