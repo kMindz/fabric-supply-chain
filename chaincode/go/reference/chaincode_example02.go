@@ -13,7 +13,10 @@ import (
 
 var logger = shim.NewLogger("SimpleChaincode")
 
+type OrgData [] Product
+
 type Product struct {
+	ID          string `json:"productID"`
 	ObjectType  string `json:"productObjectType"`
 	Name        string `json:"productName"`
 	Desc        string `json:"productDesc"`
@@ -47,11 +50,14 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 
 	function, args := stub.GetFunctionAndParameters()
 	if function == "add" {
-		// Add product
+		// Add product to organisation
 		return t.add(stub, args)
-	} else if function == "delete" {
-		// Deletes an entity from its state
-		return t.delete(stub, args)
+	} else if function == "deleteOrg" {
+		// Deletes organisation
+		return t.deleteOrg(stub, args)
+	} else if function == "deleteProduct" {
+		// Deletes product from organisation
+		return t.deleteProduct(stub, args)
 	} else if function == "query" {
 		// the old "Query" is now implemented in invoke
 		return t.query(stub, args)
@@ -62,16 +68,14 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 
 // Transaction makes adding product to org
 func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	//var productName, productDesc string // Entities
-	//var product Product
-	//var DateCreated, DateUpdated time.Time
+	var OrgDataJSON OrgData
 	var err error
 
 	if len(args) != 4 {
 		return shim.Error("Incorrect number of arguments. Expecting 4")
 	}
 
-	fmt.Println("Init product")
+	fmt.Println("Add product")
 	if len(args[0]) <= 0 {
 		return shim.Error("1st argument must be a non-empty string")
 	}
@@ -90,47 +94,87 @@ func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) p
 	productState := args[2]
 	productOrg := args[3]
 
-	// Check if product already exists
-	productAsBytes, err := stub.GetState(productName)
+	// Get Organisation data
+	OrgAsBytes, err := stub.GetState(productOrg)
 	if err != nil {
-		return shim.Error("Failed to get product: " + err.Error())
-	} else if productAsBytes != nil {
-		fmt.Println("This product already exists: " + productName)
-		return shim.Error("This product already exists: " + productName)
+		return shim.Error("Failed to get Org: " + err.Error())
+	}
+
+	err = json.Unmarshal([]byte(OrgAsBytes), &OrgDataJSON)
+	if err != nil {
+		jsonResp = "{\"Error\":\"Failed to decode JSON of Org: " + productOrg + "\"}"
+		return shim.Error(jsonResp)
 	}
 
 	// Create product object and marshal to JSON
+	productID := uuid.Must(uuid.NewV4())
 	DateCreated := time.Now()
 	DateUpdated := time.Now()
 	objectType := "product"
-	product := &Product{objectType, productName, productDesc, productState,
+	product := Product{productID, objectType, productName, productDesc, productState,
 		productOrg, DateCreated, DateUpdated}
-	productJSONasBytes, err := json.Marshal(product)
-
-	// Write the product to the ledger
-	err = stub.PutState(productName, productJSONasBytes)
+	OrgDataJSON = append(OrgDataJSON, product)
+	productJSONasBytes, err := json.Marshal(OrgDataJSON)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 
-	fmt.Println("End init product")
+	// Write the product to the ledger
+	err = stub.PutState(productOrg, productJSONasBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	fmt.Println("End add product")
 
 	return shim.Success(nil)
 }
 
 // deletes an entity from state
-func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *SimpleChaincode) deleteOrg(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	if len(args) != 1 {
 		return pb.Response{Status: 403, Message: "Incorrect number of arguments"}
 	}
 
-	productName := args[0]
+	Org := args[0]
 
 	// Delete the key from the state in ledger
-	err := stub.DelState(productName)
+	err := stub.DelState(Org)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
+
+	return shim.Success(nil)
+}
+
+// deletes product from from organisation
+func (t *SimpleChaincode) deleteProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	var OrgDataJSON OrgData
+
+	if len(args) != 2 {
+		return pb.Response{Status: 403, Message: "Incorrect number of arguments"}
+	}
+
+	productOrg := args[0]
+	//productID := args[1]
+
+	// Get Organisation data
+	OrgAsBytes, err := stub.GetState(productOrg)
+	if err != nil {
+		return shim.Error("Failed to get Org: " + err.Error())
+	}
+
+	err = json.Unmarshal([]byte(OrgAsBytes), &OrgDataJSON)
+	if err != nil {
+		jsonResp = "{\"Error\":\"Failed to decode JSON of Org: " + productOrg + "\"}"
+		return shim.Error(jsonResp)
+	}
+
+	// Delete the key from the state in ledger
+	//err := stub.DelState(Org)
+	//if err != nil {
+	//	return shim.Error(err.Error())
+	//}
 
 	return shim.Success(nil)
 }
@@ -141,7 +185,7 @@ func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string)
 	var err error
 
 	if len(args) != 1 {
-		return pb.Response{Status:403, Message:"Incorrect number of arguments"}
+		return pb.Response{Status: 403, Message: "Incorrect number of arguments"}
 	}
 
 	productName = args[0]
