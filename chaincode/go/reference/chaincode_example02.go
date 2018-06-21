@@ -9,6 +9,7 @@ import (
 	"time"
 	"encoding/json"
 	"fmt"
+	"strconv"
 )
 
 var logger = shim.NewLogger("SimpleChaincode")
@@ -30,8 +31,42 @@ type SimpleChaincode struct {
 func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Debug("Init")
 
+	_, args := stub.GetFunctionAndParameters()
+	var a, b string    // Entities
+	var aVal,  bVal int // Asset holdings
+	var err error
+
+	if len(args) != 4 {
+		return pb.Response{Status:403, Message:"Incorrect number of arguments. Expecting 4"}
+	}
+
+	// Initialize the chaincode
+	a = args[0]
+	aVal, err = strconv.Atoi(args[1])
+	if err != nil {
+		return pb.Response{Status:403, Message:"Expecting integer value for asset holding"}
+	}
+	b = args[2]
+	bVal, err = strconv.Atoi(args[3])
+	if err != nil {
+		return pb.Response{Status:403, Message:"Expecting integer value for asset holding"}
+	}
+	logger.Debugf("aVal, bVal = %d", aVal, bVal)
+
+	// Write the state to the ledger
+	err = stub.PutState(a, []byte(strconv.Itoa(aVal)))
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	err = stub.PutState(b, []byte(strconv.Itoa(bVal)))
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
 	return shim.Success(nil)
 }
+
 
 func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Debug("Invoke")

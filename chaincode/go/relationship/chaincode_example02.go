@@ -22,7 +22,7 @@ func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 
 	_, args := stub.GetFunctionAndParameters()
 	var a, b string    // Entities
-	var aVal, bVal int // Asset holdings
+	var aVal,  bVal int // Asset holdings
 	var err error
 
 	if len(args) != 4 {
