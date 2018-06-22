@@ -63,6 +63,9 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	if function == "add" {
 		// Add product to organisation
 		return t.add(stub, args)
+	} else if function == "move" {
+		// Updates product from organisation
+		return t.move(stub, args)
 	} else if function == "update" {
 		// Updates product from organisation
 		return t.update(stub, args)
@@ -75,6 +78,12 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	}
 
 	return pb.Response{Status: 403, Message: "Invalid invoke function name."}
+}
+
+// Transaction makes payment of x units from a to b
+func (t *SimpleChaincode) move(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+
+	return shim.Success(nil)
 }
 
 // Transaction makes adding product
