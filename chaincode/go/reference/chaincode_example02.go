@@ -107,7 +107,7 @@ func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) p
 	productOrg := args[3]
 	productDateUpdated, err := strconv.Atoi(args[4])
 
-	productStateInt, legalState := mapkey(productStateMap, productState)
+	productStateInt, legalState := mapKey(productStateMap, productState)
 	if !legalState {
 		return shim.Error("Not legal product state")
 	}
@@ -159,7 +159,7 @@ func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string
 	productDateUpdated, err := strconv.Atoi(args[4])
 	productID := args[5]
 
-	productStateInt, legalState := mapkey(productStateMap, productState)
+	productStateInt, legalState := mapKey(productStateMap, productState)
 	if !legalState {
 		return shim.Error("Not legal product state")
 	}
@@ -252,7 +252,7 @@ func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string)
 	return shim.Success(nil)
 }
 
-var mapkey = func(m map[int]string, value string) (key int, ok bool) {
+var mapKey = func(m map[int]string, value string) (key int, ok bool) {
 	for k, v := range m {
 		if v == value {
 			key = k
