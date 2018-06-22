@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/hyperledger/fabric/core/chaincode/shim"
+	"github.com/satori/go.uuid"
 	pb "github.com/hyperledger/fabric/protos/peer"
 	"encoding/pem"
 	"crypto/x509"
