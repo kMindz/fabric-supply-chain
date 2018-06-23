@@ -2,11 +2,11 @@ package main
 
 import (
 	"github.com/hyperledger/fabric/core/chaincode/shim"
+	"github.com/satori/go.uuid"
 	pb "github.com/hyperledger/fabric/protos/peer"
 	"encoding/pem"
 	"crypto/x509"
 	"strings"
-	"time"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -14,14 +14,28 @@ import (
 
 var logger = shim.NewLogger("SimpleChaincode")
 
+const objectType = "product"
+
+var productStateMap = map[int]string{
+	1: "Registered",
+	2: "Active",
+	3: "Decision-making",
+	4: "Inactive",
+}
+
+type CompositeKey struct {
+	ID          string `json:"id"`
+	Org         string `json:"org"`
+	ProductName string `json:"productName"`
+}
+
 type Product struct {
-	ObjectType  string `json:"productObjectType"`
+	ID          string `json:"productID"`
 	Name        string `json:"productName"`
 	Desc        string `json:"productDesc"`
-	State       string `json:"productState"`
+	State       int    `json:"productState"`
 	Org         string `json:"productOrg"`
-	DateCreated time.Time
-	DateUpdated time.Time
+	DateUpdated int    `json:"productDateUpdated"`
 }
 
 // SimpleChaincode example simple Chaincode implementation
@@ -82,10 +96,16 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 
 	function, args := stub.GetFunctionAndParameters()
 	if function == "add" {
-		// Add product
+		// Add product to organisation
 		return t.add(stub, args)
+	} else if function == "move" {
+		// Updates product from organisation
+		return t.move(stub, args)
+	} else if function == "update" {
+		// Updates product from organisation
+		return t.update(stub, args)
 	} else if function == "delete" {
-		// Deletes an entity from its state
+		// Deletes product from organisation
 		return t.delete(stub, args)
 	} else if function == "query" {
 		// the old "Query" is now implemented in invoke
@@ -95,74 +115,146 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	return pb.Response{Status: 403, Message: "Invalid invoke function name."}
 }
 
-// Transaction makes adding product to org
+// Transaction makes payment of x units from a to b
+func (t *SimpleChaincode) move(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+
+	return shim.Success(nil)
+}
+
+// Transaction makes adding product
 func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	//var productName, productDesc string // Entities
-	//var product Product
-	//var DateCreated, DateUpdated time.Time
-	var err error
 
-	if len(args) != 4 {
-		return shim.Error("Incorrect number of arguments. Expecting 4")
+	if len(args) != 5 {
+		return shim.Error("Incorrect number of arguments. Expecting 5")
 	}
 
-	fmt.Println("Init product")
-	if len(args[0]) <= 0 {
-		return shim.Error("1st argument must be a non-empty string")
-	}
-	if len(args[1]) <= 0 {
-		return shim.Error("2nd argument must be a non-empty string")
-	}
-	if len(args[2]) <= 0 {
-		return shim.Error("3rd argument must be a non-empty string")
-	}
-	if len(args[3]) <= 0 {
-		return shim.Error("4th argument must be a non-empty string")
+	fmt.Println("Add product")
+
+	for k, v := range args {
+		if len(v) <= 0 {
+			return shim.Error(strconv.Itoa(k+1) + "st argument must be a non-empty string")
+		}
 	}
 
 	productName := args[0]
 	productDesc := args[1]
 	productState := args[2]
 	productOrg := args[3]
+	productDateUpdated, err := strconv.Atoi(args[4])
 
-	// Check if product already exists
-	productAsBytes, err := stub.GetState(productName)
-	if err != nil {
-		return shim.Error("Failed to get product: " + err.Error())
-	} else if productAsBytes != nil {
-		fmt.Println("This product already exists: " + productName)
-		return shim.Error("This product already exists: " + productName)
+	productStateInt, legalState := mapKey(productStateMap, productState)
+	if !legalState {
+		return shim.Error("Not legal product state")
 	}
 
-	// Create product object and marshal to JSON
-	DateCreated := time.Now()
-	DateUpdated := time.Now()
-	objectType := "product"
-	product := &Product{objectType, productName, productDesc, productState,
-		productOrg, DateCreated, DateUpdated}
-	productJSONasBytes, err := json.Marshal(product)
+	productID := uuid.Must(uuid.NewV4())
+	key := &CompositeKey{productID, productOrg, productName}
+	productData := &Product{productID, productName, productDesc, productStateInt, productOrg, productDateUpdated}
 
-	// Write the product to the ledger
-	err = stub.PutState(productName, productJSONasBytes)
+	dataKey, err := stub.CreateCompositeKey(objectType, []string{key.ID, key.Org, key.ProductName})
+	if err != nil {
+		return shim.Error("Couldn't create composite key " + err.Error())
+	}
+
+	productJSONasBytes, err := json.Marshal(productData)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 
-	fmt.Println("End init product")
+	err = stub.PutState(dataKey, productJSONasBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
 
-	return shim.Success(nil)
+	fmt.Println("End add product")
+
+	return shim.Success(productJSONasBytes)
 }
 
-// deletes an entity from state
+// Transaction makes updating product
+func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	var productData Product
+
+	if len(args) != 6 {
+		return shim.Error("Incorrect number of arguments. Expecting 6")
+	}
+
+	fmt.Println("Update product")
+
+	for k, v := range args {
+		if len(v) <= 0 {
+			return shim.Error(strconv.Itoa(k+1) + "st argument must be a non-empty string")
+		}
+	}
+
+	productName := args[0]
+	productDesc := args[1]
+	productState := args[2]
+	productOrg := args[3]
+	productDateUpdated, err := strconv.Atoi(args[4])
+	productID := args[5]
+
+	productStateInt, legalState := mapKey(productStateMap, productState)
+	if !legalState {
+		return shim.Error("Not legal product state")
+	}
+
+	key := &CompositeKey{productID, productOrg, productName}
+
+	dataKey, err := stub.CreateCompositeKey(objectType, []string{key.ID, key.Org, key.ProductName})
+	if err != nil {
+		return shim.Error("Couldn't create composite key " + err.Error())
+	}
+
+	// Get the state from the ledger
+	productJSONasBytes, err := stub.GetState(dataKey)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	if productJSONasBytes == nil {
+		return pb.Response{Status: 404, Message: "Entity not found"}
+	}
+
+	err = json.Unmarshal(productJSONasBytes, &productData)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	productData.Name = productName
+	productData.Desc = productDesc
+	productData.State = productStateInt
+	productData.DateUpdated = productDateUpdated
+
+	productJSONasBytes, err = json.Marshal(productData)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	err = stub.PutState(dataKey, productJSONasBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	fmt.Println("End add product")
+
+	return shim.Success(productJSONasBytes)
+}
+
+// deletes product
 func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+
 	if len(args) != 1 {
 		return pb.Response{Status: 403, Message: "Incorrect number of arguments"}
 	}
 
-	productName := args[0]
+	if len(args[0]) <= 0 {
+		return shim.Error("1st argument must be a non-empty string")
+	}
 
-	// Delete the key from the state in ledger
-	err := stub.DelState(productName)
+	productID := args[0]
+
+	//Delete the key from the state in ledger
+	err := stub.DelState(productID)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -172,26 +264,38 @@ func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string
 
 // read value
 func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	var a string // Entities
-	var err error
+	//var a string // Entities
+	//var err error
+	//
+	//if len(args) != 1 {
+	//	return pb.Response{Status: 403, Message: "Incorrect number of arguments"}
+	//}
+	//
+	//productName = args[0]
+	//
+	//// Get the state from the ledger
+	//productBytes, err := stub.GetState(productName)
+	//if err != nil {
+	//	return shim.Error(err.Error())
+	//}
+	//
+	//if productBytes == nil {
+	//	return pb.Response{Status: 404, Message: "Entity not found"}
+	//}
+	//
+	//return shim.Success(productBytes)
+	return shim.Success(nil)
+}
 
-	if len(args) != 1 {
-		return pb.Response{Status:403, Message:"Incorrect number of arguments"}
+var mapKey = func(m map[int]string, value string) (key int, ok bool) {
+	for k, v := range m {
+		if v == value {
+			key = k
+			ok = true
+			return
+		}
 	}
-
-	productName = args[0]
-
-	// Get the state from the ledger
-	productBytes, err := stub.GetState(productName)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	if productBytes == nil {
-		return pb.Response{Status: 404, Message: "Entity not found"}
-	}
-
-	return shim.Success(productBytes)
+	return
 }
 
 var getCreator = func(certificate []byte) (string, string) {
