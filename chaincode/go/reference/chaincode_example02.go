@@ -148,8 +148,8 @@ func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) p
 	}
 
 	productID := uuid.Must(uuid.NewV4())
-	key := &CompositeKey{productID, productOrg, productName}
-	productData := &Product{productID, productName, productDesc, productStateInt, productOrg, productDateUpdated}
+	key := &CompositeKey{productID.String(), productOrg, productName}
+	productData := &Product{productID.String(), productName, productDesc, productStateInt, productOrg, productDateUpdated}
 
 	dataKey, err := stub.CreateCompositeKey(objectType, []string{key.ID, key.Org, key.ProductName})
 	if err != nil {

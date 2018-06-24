@@ -51,6 +51,7 @@ services:
       - ../artifacts:/etc/hyperledger/artifacts
       - ../chaincode:/opt/chaincode
       - ../chaincode/go:/opt/gopath/src
+      - ~/go/src/github.com/satori/go.uuid:/opt/gopath/src/github.com/satori/go.uuid
     working_dir: /etc/hyperledger/artifacts
 
   api-base:
