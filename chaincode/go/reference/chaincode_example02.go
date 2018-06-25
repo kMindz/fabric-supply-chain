@@ -24,9 +24,9 @@ var productStateMap = map[int]string{
 }
 
 type CompositeKey struct {
-	ID          string `json:"id"`
 	Org         string `json:"org"`
 	ProductName string `json:"productName"`
+	ID          string `json:"id"`
 }
 
 type Product struct {
@@ -38,46 +38,20 @@ type Product struct {
 	DateUpdated int    `json:"productDateUpdated"`
 }
 
+type Org struct {
+	Name        string `json:"orgName"`
+	Products    [] Product `json:"products"`
+}
+
+
+
+
 // SimpleChaincode example simple Chaincode implementation
 type SimpleChaincode struct {
 }
 
 func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Debug("Init")
-
-	_, args := stub.GetFunctionAndParameters()
-	var a, b string    // Entities
-	var aVal,  bVal int // Asset holdings
-	var err error
-
-	if len(args) != 4 {
-		return pb.Response{Status:403, Message:"Incorrect number of arguments. Expecting 4"}
-	}
-
-	// Initialize the chaincode
-	a = args[0]
-	aVal, err = strconv.Atoi(args[1])
-	if err != nil {
-		return pb.Response{Status:403, Message:"Expecting integer value for asset holding"}
-	}
-	b = args[2]
-	bVal, err = strconv.Atoi(args[3])
-	if err != nil {
-		return pb.Response{Status:403, Message:"Expecting integer value for asset holding"}
-	}
-	logger.Debugf("aVal, bVal = %d", aVal, bVal)
-
-	// Write the state to the ledger
-	err = stub.PutState(a, []byte(strconv.Itoa(aVal)))
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	err = stub.PutState(b, []byte(strconv.Itoa(bVal)))
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
 	return shim.Success(nil)
 }
 
@@ -138,20 +112,15 @@ func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) p
 
 	productName := args[0]
 	productDesc := args[1]
-	productState := args[2]
+	productState, _ := strconv.Atoi(args[2])
 	productOrg := args[3]
 	productDateUpdated, err := strconv.Atoi(args[4])
 
-	productStateInt, legalState := mapKey(productStateMap, productState)
-	if !legalState {
-		return shim.Error("Not legal product state")
-	}
-
 	productID := uuid.Must(uuid.NewV4())
-	key := &CompositeKey{productID.String(), productOrg, productName}
-	productData := &Product{productID.String(), productName, productDesc, productStateInt, productOrg, productDateUpdated}
+	key := &CompositeKey{productOrg, productName, productID.String()}
+	productData := &Product{productID.String(), productName, productDesc, productState, productOrg, productDateUpdated}
 
-	dataKey, err := stub.CreateCompositeKey(objectType, []string{key.ID, key.Org, key.ProductName})
+	dataKey, err := stub.CreateCompositeKey(objectType, []string{key.Org, key.ProductName, key.ID})
 	if err != nil {
 		return shim.Error("Couldn't create composite key " + err.Error())
 	}
@@ -189,19 +158,14 @@ func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string
 
 	productName := args[0]
 	productDesc := args[1]
-	productState := args[2]
+	productState, _ := strconv.Atoi(args[2])
 	productOrg := args[3]
 	productDateUpdated, err := strconv.Atoi(args[4])
 	productID := args[5]
 
-	productStateInt, legalState := mapKey(productStateMap, productState)
-	if !legalState {
-		return shim.Error("Not legal product state")
-	}
+	key := &CompositeKey{productOrg, productName, productID}
 
-	key := &CompositeKey{productID, productOrg, productName}
-
-	dataKey, err := stub.CreateCompositeKey(objectType, []string{key.ID, key.Org, key.ProductName})
+	dataKey, err := stub.CreateCompositeKey(objectType, []string{key.Org, key.ProductName, key.ID})
 	if err != nil {
 		return shim.Error("Couldn't create composite key " + err.Error())
 	}
@@ -222,7 +186,7 @@ func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string
 	}
 	productData.Name = productName
 	productData.Desc = productDesc
-	productData.State = productStateInt
+	productData.State = productState
 	productData.DateUpdated = productDateUpdated
 
 	productJSONasBytes, err = json.Marshal(productData)
@@ -264,39 +228,80 @@ func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string
 
 // read value
 func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	//var a string // Entities
-	//var err error
-	//
-	//if len(args) != 1 {
-	//	return pb.Response{Status: 403, Message: "Incorrect number of arguments"}
-	//}
-	//
-	//productName = args[0]
-	//
-	//// Get the state from the ledger
-	//productBytes, err := stub.GetState(productName)
-	//if err != nil {
-	//	return shim.Error(err.Error())
-	//}
-	//
-	//if productBytes == nil {
-	//	return pb.Response{Status: 404, Message: "Entity not found"}
-	//}
-	//
-	//return shim.Success(productBytes)
-	return shim.Success(nil)
+
+	productOrg := args[0]
+
+	var Orgs []Org
+
+	var Org Org
+
+	var productsData []Product
+
+	var productData Product
+
+	var keyPart []string
+
+
+	key := &CompositeKey{productOrg, "", ""}
+
+	if len(args) != 1 {
+		return pb.Response{Status: 403, Message: "Incorrect number of arguments"}
+	}
+
+	// Get the state from the ledger
+	if args[0] != "all" {
+		keyPart = append(keyPart, key.Org)
+	}
+
+	productResultsIterator, err := stub.GetStateByPartialCompositeKey(objectType, keyPart)
+
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	defer productResultsIterator.Close()
+
+	// Iterate through result set and for each product found
+	var i int
+	for i = 0; productResultsIterator.HasNext(); i++ {
+		// Note that we don't get the value (2nd return variable), we'll just get the marble name from the composite key
+		responseRange, err := productResultsIterator.Next()
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+		//productData := &Product{productID.String(), productName, productDesc, productStateInt, productOrg, productDateUpdated}
+
+		productJSONasBytes := responseRange.Value
+
+		if productJSONasBytes == nil {
+			return pb.Response{Status: 404, Message: "Entity not found"}
+		}
+
+		err = json.Unmarshal(productJSONasBytes, &productData)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		productsData = append(productsData, productData)
+
+	}
+	Org.Name = productOrg
+	Org.Products = productsData
+
+	Orgs = append(Orgs, Org)
+
+	OrgProductsJSONasBytes, err := json.Marshal(Orgs)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	if OrgProductsJSONasBytes == nil {
+		return pb.Response{Status: 404, Message: "Entity not found"}
+	}
+
+	return shim.Success(OrgProductsJSONasBytes)
 }
 
-var mapKey = func(m map[int]string, value string) (key int, ok bool) {
-	for k, v := range m {
-		if v == value {
-			key = k
-			ok = true
-			return
-		}
-	}
-	return
-}
 
 var getCreator = func(certificate []byte) (string, string) {
 	data := certificate[strings.Index(string(certificate), "-----") : strings.LastIndex(string(certificate), "-----")+5]
