@@ -16,6 +16,20 @@ var logger = shim.NewLogger("SimpleChaincode")
 
 const objectType = "product"
 
+var productStateMap = map[int]string{
+	1: "Registered",
+	2: "Active",
+	3: "Decision-making",
+	4: "Inactive",
+}
+
+var productStateMachine = map[int][]int{
+	1: {1,2},
+	2: {2,3},
+	3: {2,3,4},
+	4: {4},
+}
+
 type CompositeKey struct {
 	Org         string `json:"org"`
 	ProductName string `json:"productName"`
@@ -26,7 +40,7 @@ type Product struct {
 	ID          string `json:"productID"`
 	Name        string `json:"productName"`
 	Desc        string `json:"productDesc"`
-	State       int    `json:"productState"`
+	State       map[int]string   `json:"productState"`
 	Org         string `json:"productOrg"`
 	DateUpdated int    `json:"productDateUpdated"`
 }
@@ -35,9 +49,6 @@ type Org struct {
 	Name        string `json:"orgName"`
 	Products    [] Product `json:"products"`
 }
-
-
-
 
 // SimpleChaincode example simple Chaincode implementation
 type SimpleChaincode struct {
@@ -105,13 +116,18 @@ func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) p
 
 	productName := args[0]
 	productDesc := args[1]
-	productState, _ := strconv.Atoi(args[2])
+	productState := args[2]
 	productOrg := args[3]
 	productDateUpdated, err := strconv.Atoi(args[4])
 
+	productStateInt, legalState := mapKey(productStateMap, productState)
+	if !legalState || productStateInt != 1 {
+		return shim.Error("Not legal product state") // only "Registered" state when add new product
+	}
+
 	productID := uuid.Must(uuid.NewV4())
 	key := &CompositeKey{productOrg, productName, productID.String()}
-	productData := &Product{productID.String(), productName, productDesc, productState, productOrg, productDateUpdated}
+	productData := &Product{productID.String(), productName, productDesc, map[int]string{productStateInt: productState}, productOrg, productDateUpdated}
 
 	dataKey, err := stub.CreateCompositeKey(objectType, []string{key.Org, key.ProductName, key.ID})
 	if err != nil {
@@ -151,7 +167,7 @@ func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string
 
 	productName := args[0]
 	productDesc := args[1]
-	productState, _ := strconv.Atoi(args[2])
+	productState := args[2]
 	productOrg := args[3]
 	productDateUpdated, err := strconv.Atoi(args[4])
 	productID := args[5]
@@ -177,9 +193,20 @@ func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string
 	if err != nil {
 		return shim.Error(err.Error())
 	}
+
+	productStateInt, legalState := mapKey(productStateMap, productState)
+	if !legalState {
+		return shim.Error("Not legal product state") // only "Registered" state when add new product
+	}
+	oldKey, _ := getFirstKeyValue(productData.State)
+	productStateIntNew, legalState := checkNewState(productStateMachine, oldKey, productStateInt)
+	if !legalState {
+		return shim.Error("Not legal product state")
+	}
+
 	productData.Name = productName
 	productData.Desc = productDesc
-	productData.State = productState
+	productData.State = map[int]string{productStateIntNew: productState}
 	productData.DateUpdated = productDateUpdated
 
 	productJSONasBytes, err = json.Marshal(productData)
@@ -222,8 +249,6 @@ func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string
 // read value
 func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
-	productOrg := args[0]
-
 	var Orgs []Org
 
 	var Org Org
@@ -234,12 +259,12 @@ func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string)
 
 	var keyPart []string
 
-
-	key := &CompositeKey{productOrg, "", ""}
-
 	if len(args) != 1 {
 		return pb.Response{Status: 403, Message: "Incorrect number of arguments"}
 	}
+
+	productOrg := args[0]
+	key := &CompositeKey{productOrg, "", ""}
 
 	// Get the state from the ledger
 	if args[0] != "all" {
@@ -295,6 +320,38 @@ func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string)
 	return shim.Success(OrgProductsJSONasBytes)
 }
 
+var getFirstKeyValue = func(variable map[int]string) (key int, val string) {
+	for k, v := range variable {
+		key = k
+		val = v
+		return
+	}
+	return
+}
+
+var checkNewState = func(states map[int][]int, stateOld int, stateNew int) (key int, ok bool) {
+	for k, v := range states {
+		for _, v2 := range v {
+			if v2 == stateNew && k == stateOld {
+				key = stateNew
+				ok = true
+				return
+			}
+		}
+	}
+	return
+}
+
+var mapKey = func(m map[int]string, value string) (key int, ok bool) {
+	for k, v := range m {
+		if v == value {
+			key = k
+			ok = true
+			return
+		}
+	}
+	return
+}
 
 var getCreator = func(certificate []byte) (string, string) {
 	data := certificate[strings.Index(string(certificate), "-----") : strings.LastIndex(string(certificate), "-----")+5]
