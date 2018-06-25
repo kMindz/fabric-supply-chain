@@ -1,15 +1,15 @@
 package main
 
 import (
-	"crypto/x509"
-	"encoding/json"
-	"encoding/pem"
-	"fmt"
 	"github.com/hyperledger/fabric/core/chaincode/shim"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/satori/go.uuid"
-	"strconv"
+	pb "github.com/hyperledger/fabric/protos/peer"
+	"encoding/pem"
+	"crypto/x509"
 	"strings"
+	"encoding/json"
+	"fmt"
+	"strconv"
 )
 
 var logger = shim.NewLogger("SimpleChaincode")
