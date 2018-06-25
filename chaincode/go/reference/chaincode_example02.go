@@ -16,13 +16,6 @@ var logger = shim.NewLogger("SimpleChaincode")
 
 const objectType = "product"
 
-var productStateMap = map[int]string{
-	1: "Registered",
-	2: "Active",
-	3: "Decision-making",
-	4: "Inactive",
-}
-
 type CompositeKey struct {
 	Org         string `json:"org"`
 	ProductName string `json:"productName"`
