@@ -16,7 +16,8 @@ var logger = shim.NewLogger("SimpleChaincode")
 
 const objectType = "product"
 
-var productStateMap = map[int]string{
+var productStateMapIntString = map[int]string{
+	0: "Unresolved",
 	1: "Registered",
 	2: "Active",
 	3: "Decision-making",
@@ -24,9 +25,9 @@ var productStateMap = map[int]string{
 }
 
 var productStateMachine = map[int][]int{
-	1: {1,2},
-	2: {2,3},
-	3: {2,3,4},
+	1: {1, 2},
+	2: {2, 3},
+	3: {2, 3, 4},
 	4: {4},
 }
 
@@ -40,14 +41,14 @@ type Product struct {
 	ID          string `json:"productID"`
 	Name        string `json:"productName"`
 	Desc        string `json:"productDesc"`
-	State       map[int]string   `json:"productState"`
+	State       int    `json:"productState"`
 	Org         string `json:"productOrg"`
 	DateUpdated int    `json:"productDateUpdated"`
 }
 
 type Org struct {
-	Name        string `json:"orgName"`
-	Products    [] Product `json:"products"`
+	Name     string     `json:"orgName"`
+	Products [] Product `json:"products"`
 }
 
 // SimpleChaincode example simple Chaincode implementation
@@ -58,7 +59,6 @@ func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Debug("Init")
 	return shim.Success(nil)
 }
-
 
 func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Debug("Invoke")
@@ -76,9 +76,6 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	if function == "add" {
 		// Add product to organisation
 		return t.add(stub, args)
-	} else if function == "move" {
-		// Updates product from organisation
-		return t.move(stub, args)
 	} else if function == "update" {
 		// Updates product from organisation
 		return t.update(stub, args)
@@ -93,16 +90,10 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	return pb.Response{Status: 403, Message: "Invalid invoke function name."}
 }
 
-// Transaction makes payment of x units from a to b
-func (t *SimpleChaincode) move(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	return shim.Success(nil)
-}
-
 // Transaction makes adding product
 func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
-	if len(args) != 5 {
+	if len(args) <= 5 {
 		return shim.Error("Incorrect number of arguments. Expecting 5")
 	}
 
@@ -116,18 +107,23 @@ func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) p
 
 	productName := args[0]
 	productDesc := args[1]
-	productState := args[2]
+	productState, err := strconv.Atoi(args[2])
+	if err != nil {
+		return shim.Error("Product state must be int. Error: " + err.Error())
+	}
 	productOrg := args[3]
 	productDateUpdated, err := strconv.Atoi(args[4])
-
-	productStateInt, legalState := mapKey(productStateMap, productState)
-	if !legalState || productStateInt != 1 {
+	if err != nil {
+		return shim.Error("Product date updated must be timestamp. Error: " + err.Error())
+	}
+	legalState := mapKey(productStateMapIntString, productState)
+	if !legalState || productState != 1 {
 		return shim.Error("Not legal product state") // only "Registered" state when add new product
 	}
 
 	productID := uuid.Must(uuid.NewV4())
 	key := &CompositeKey{productOrg, productName, productID.String()}
-	productData := &Product{productID.String(), productName, productDesc, map[int]string{productStateInt: productState}, productOrg, productDateUpdated}
+	productData := &Product{productID.String(), productName, productDesc, productState, productOrg, productDateUpdated}
 
 	dataKey, err := stub.CreateCompositeKey(objectType, []string{key.Org, key.ProductName, key.ID})
 	if err != nil {
@@ -146,14 +142,14 @@ func (t *SimpleChaincode) add(stub shim.ChaincodeStubInterface, args []string) p
 
 	fmt.Println("End add product")
 
-	return shim.Success(productJSONasBytes)
+	return shim.Success(nil)
 }
 
 // Transaction makes updating product
 func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	var productData Product
 
-	if len(args) != 6 {
+	if len(args) <= 6 {
 		return shim.Error("Incorrect number of arguments. Expecting 6")
 	}
 
@@ -167,9 +163,15 @@ func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string
 
 	productName := args[0]
 	productDesc := args[1]
-	productState := args[2]
+	productState, err := strconv.Atoi(args[2])
+	if err != nil {
+		return shim.Error("Product state must be int. Error: " + err.Error())
+	}
 	productOrg := args[3]
 	productDateUpdated, err := strconv.Atoi(args[4])
+	if err != nil {
+		return shim.Error("Product date updated must be timestamp. Error: " + err.Error())
+	}
 	productID := args[5]
 
 	key := &CompositeKey{productOrg, productName, productID}
@@ -182,10 +184,6 @@ func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string
 	// Get the state from the ledger
 	productJSONasBytes, err := stub.GetState(dataKey)
 	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	if productJSONasBytes == nil {
 		return pb.Response{Status: 404, Message: "Entity not found"}
 	}
 
@@ -194,19 +192,19 @@ func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string
 		return shim.Error(err.Error())
 	}
 
-	productStateInt, legalState := mapKey(productStateMap, productState)
+	legalState := mapKey(productStateMapIntString, productState)
 	if !legalState {
-		return shim.Error("Not legal product state") // only "Registered" state when add new product
+		return shim.Error("Not legal product state")
 	}
-	oldKey, _ := getFirstKeyValue(productData.State)
-	productStateIntNew, legalState := checkNewState(productStateMachine, oldKey, productStateInt)
-	if !legalState {
+
+	legalStateMachine := checkNewState(productStateMachine, productData.State, productState)
+	if !legalStateMachine {
 		return shim.Error("Not legal product state")
 	}
 
 	productData.Name = productName
 	productData.Desc = productDesc
-	productData.State = map[int]string{productStateIntNew: productState}
+	productData.State = productState
 	productData.DateUpdated = productDateUpdated
 
 	productJSONasBytes, err = json.Marshal(productData)
@@ -221,7 +219,7 @@ func (t *SimpleChaincode) update(stub shim.ChaincodeStubInterface, args []string
 
 	fmt.Println("End add product")
 
-	return shim.Success(productJSONasBytes)
+	return shim.Success(nil)
 }
 
 // deletes product
@@ -320,36 +318,24 @@ func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string)
 	return shim.Success(OrgProductsJSONasBytes)
 }
 
-var getFirstKeyValue = func(variable map[int]string) (key int, val string) {
-	for k, v := range variable {
-		key = k
-		val = v
-		return
-	}
-	return
-}
-
-var checkNewState = func(states map[int][]int, stateOld int, stateNew int) (key int, ok bool) {
-	for k, v := range states {
-		for _, v2 := range v {
-			if v2 == stateNew && k == stateOld {
-				key = stateNew
-				ok = true
-				return
+var checkNewState = func(states map[int][]int, stateOld int, stateNew int) (check bool) {
+	newStates, ok := states[stateOld]
+	if ok {
+		for _, v := range newStates {
+			if v == stateNew {
+				check = true
 			}
 		}
 	}
 	return
 }
 
-var mapKey = func(m map[int]string, value string) (key int, ok bool) {
-	for k, v := range m {
-		if v == value {
-			key = k
-			ok = true
-			return
-		}
+var mapKey = func(m map[int]string, value int) (check bool) {
+	_, ok := m[value]
+	if ok {
+		check = true
 	}
+
 	return
 }
 
