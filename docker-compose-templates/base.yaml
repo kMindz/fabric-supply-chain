@@ -26,12 +26,18 @@ services:
       - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/crypto/peer/tls/server.key
       - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/crypto/peer/tls/server.crt
       - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/crypto/peer/tls/ca.crt
+      # CouchDB config
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb-base:5984
     working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
     command: peer node start
+    ports:
+      - 7051:7051
+      - 7053:7053
     volumes:
       - /var/run/:/host/var/run/
 
-#  couchdb-base:
+  couchdb-base:
     image: hyperledger/fabric-couchdb:x86_64-1.1.0-preview
 
   cli-base:
