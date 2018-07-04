@@ -11,7 +11,8 @@ import (
 	"encoding/pem"
 	"crypto/x509"
 	"strings"
-)
+	"net/url"
+	)
 
 var logger = shim.NewLogger("SimpleChaincode")
 
@@ -547,13 +548,20 @@ func (t *SimpleChaincode) queryProducts(stub shim.ChaincodeStubInterface, args [
 		return shim.Error("Incorrect number of arguments. Expecting 1")
 	}
 
-	queryString := args[0]
+	in, err := url.QueryUnescape(args[0])
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	queryString := fmt.Sprintf(in);
+
+	fmt.Printf("- Show QueryString:\n%s\n", queryString)
 
 	queryResults, err := getQueryResultForQueryString(stub, queryString)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 	return shim.Success(queryResults)
+
 }
 
 // =========================================================================================
