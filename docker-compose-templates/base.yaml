@@ -59,6 +59,7 @@ services:
     volumes:
      - ../artifacts:/usr/src/artifacts
      - ../../fabric-rest/server/www-admin:/usr/src/app/www
+     - ../../fabric-rest/server/middleware:/usr/src/app/middleware
     command: sh -c "npm start"
 
   www-base:
