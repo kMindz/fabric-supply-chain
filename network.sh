@@ -294,6 +294,7 @@ function generatePeerArtifacts() {
     peer0_event_port=$6
     peer1_port=$7
     peer1_event_port=$8
+    couchdb_port=$9
 
     : ${api_port:=${DEFAULT_API_PORT}}
     : ${www_port:=${DEFAULT_WWW_PORT}}
@@ -302,8 +303,9 @@ function generatePeerArtifacts() {
     : ${peer0_event_port:=${DEFAULT_PEER0_EVENT_PORT}}
     : ${peer1_port:=${DEFAULT_PEER1_PORT}}
     : ${peer1_event_port:=${DEFAULT_PEER1_EVENT_PORT}}
+    : ${couchdb_port:=${DEFAULT_COUCHDB_PORT}}
 
-    echo "Creating peer yaml files with $DOMAIN, $org, $api_port, $www_port, $ca_port, $peer0_port, $peer0_event_port, $peer1_port, $peer1_event_port"
+    echo "Creating peer yaml files with $DOMAIN, $org, $api_port, $www_port, $ca_port, $peer0_port, $peer0_event_port, $peer1_port, $peer1_event_port, $couchdb_port"
 
     compose_template=$TEMPLATES_DOCKER_COMPOSE_FOLDER/docker-composetemplate-peer.yaml
     f="$GENERATED_DOCKER_COMPOSE_FOLDER/docker-compose-$org.yaml"
@@ -312,7 +314,7 @@ function generatePeerArtifacts() {
     sed -e "s/DOMAIN/$DOMAIN/g" -e "s/ORG/$org/g" $TEMPLATES_ARTIFACTS_FOLDER/cryptogentemplate-peer.yaml > $GENERATED_ARTIFACTS_FOLDER/"cryptogen-$org.yaml"
 
     # docker-compose yaml
-    sed -e "s/PEER_EXTRA_HOSTS/$peer_extra_hosts/g" -e "s/CLI_EXTRA_HOSTS/$cli_extra_hosts/g" -e "s/API_EXTRA_HOSTS/$api_extra_hosts/g" -e "s/DOMAIN/$DOMAIN/g" -e "s/\([^ ]\)ORG/\1$org/g" -e "s/API_PORT/$api_port/g" -e "s/WWW_PORT/$www_port/g" -e "s/CA_PORT/$ca_port/g" -e "s/PEER0_PORT/$peer0_port/g" -e "s/PEER0_EVENT_PORT/$peer0_event_port/g" -e "s/PEER1_PORT/$peer1_port/g" -e "s/PEER1_EVENT_PORT/$peer1_event_port/g" ${compose_template} | awk '{gsub(/\[newline\]/, "\n")}1' > ${f}
+    sed -e "s/PEER_EXTRA_HOSTS/$peer_extra_hosts/g" -e "s/CLI_EXTRA_HOSTS/$cli_extra_hosts/g" -e "s/API_EXTRA_HOSTS/$api_extra_hosts/g" -e "s/DOMAIN/$DOMAIN/g" -e "s/\([^ ]\)ORG/\1$org/g" -e "s/API_PORT/$api_port/g" -e "s/WWW_PORT/$www_port/g" -e "s/CA_PORT/$ca_port/g" -e "s/PEER0_PORT/$peer0_port/g" -e "s/PEER0_EVENT_PORT/$peer0_event_port/g" -e "s/PEER1_PORT/$peer1_port/g" -e "s/PEER1_EVENT_PORT/$peer1_event_port/g" -e "s/COUCHDB_PORT/$couchdb_port/g" ${compose_template} | awk '{gsub(/\[newline\]/, "\n")}1' > ${f}
 
     # fabric-ca-server-config yaml
     sed -e "s/ORG/$org/g" $TEMPLATES_ARTIFACTS_FOLDER/fabric-ca-server-configtemplate.yaml > $GENERATED_ARTIFACTS_FOLDER/"fabric-ca-server-config-$org.yaml"
@@ -768,7 +770,7 @@ function addOrg() {
   rm -f $GENERATED_ARTIFACTS_FOLDER/newOrgMSP.json $GENERATED_ARTIFACTS_FOLDER/config.* $GENERATED_ARTIFACTS_FOLDER/update.* $GENERATED_ARTIFACTS_FOLDER/updated_config.* $GENERATED_ARTIFACTS_FOLDER/update_in_envelope.*
 
   # ex. generatePeerArtifacts foo 4005 8086 1254 1251 1253 1256 1258
-  generatePeerArtifacts ${org} ${API_PORT} ${WWW_PORT} ${CA_PORT} ${PEER0_PORT} ${PEER0_EVENT_PORT} ${PEER1_PORT} ${PEER1_EVENT_PORT}
+  generatePeerArtifacts ${org} ${API_PORT} ${WWW_PORT} ${CA_PORT} ${PEER0_PORT} ${PEER0_EVENT_PORT} ${PEER1_PORT} ${PEER1_EVENT_PORT} ${COUCHDB_PORT}
 
   dockerComposeUp ${org}
 
@@ -1248,9 +1250,9 @@ elif [ "${MODE}" == "generate" ]; then
   clean
   removeArtifacts
 
-  generatePeerArtifacts ${ORG1} 4000 8081 7054 7051 7053 7056 7058
-  generatePeerArtifacts ${ORG2} 4001 8082 8054 8051 8053 8056 8058
-  generatePeerArtifacts ${ORG3} 4002 8083 9054 9051 9053 9056 9058
+  generatePeerArtifacts ${ORG1} 4000 8081 7054 7051 7053 7056 7058 5984
+  generatePeerArtifacts ${ORG2} 4001 8082 8054 8051 8053 8056 8058 6984
+  generatePeerArtifacts ${ORG3} 4002 8083 9054 9051 9053 9056 9058 7984
   generateOrdererDockerCompose ${ORG1}
   generateOrdererArtifacts
   #generateWait
@@ -1263,7 +1265,7 @@ elif [ "${MODE}" == "generate-orderer" ]; then  # params: -M ORG (optional)
 elif [ "${MODE}" == "generate-peer" ]; then # params: -o ORG -R true(optional- REMOTE_ORG)
   clean
   removeArtifacts
-  generatePeerArtifacts ${ORG} ${API_PORT} ${WWW_PORT} ${CA_PORT} ${PEER0_PORT} ${PEER0_EVENT_PORT} ${PEER1_PORT} ${PEER1_EVENT_PORT}
+  generatePeerArtifacts ${ORG} ${API_PORT} ${WWW_PORT} ${CA_PORT} ${PEER0_PORT} ${PEER0_EVENT_PORT} ${PEER1_PORT} ${PEER1_EVENT_PORT} ${COUCHDB_PORT}
   servePeerArtifacts ${ORG}
   #if [ -n "$REMOTE_ORG" ]; then
     addOrgToCliHosts ${ORG} "orderer" ${IP_ORDERER}
