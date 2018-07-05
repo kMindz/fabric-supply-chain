@@ -27,6 +27,7 @@ type Product struct {
 	State       int    `json:"state"`
 	LastUpdated int    `json:"lastUpdated"`
 	Owner       string `json:"owner"`
+	OwnerNew       string `json:"ownerNew"`
 }
 
 var productStateMachine = map[int][]int{
@@ -45,6 +46,20 @@ func main() {
 		logger.Error(err.Error())
 	}
 }
+
+func (prod *Product) EmitState(stub shim.ChaincodeStubInterface) error {
+	data, err := json.Marshal(prod)
+	if err != nil {
+		return err
+	}
+
+	if err = stub.SetEvent("Accept", data); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 
 // Init initializes chaincode
 // ===========================
@@ -82,6 +97,10 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		return t.delete(stub, args)
 	} else if function == "readProduct" { //read a product
 		return t.readProduct(stub, args)
+	} else if function == "initProductState" {
+		return t.initProductState(stub, args)
+	} else if function == "queryProductByOwner" { //find product for owner X using rich query
+		return t.queryProductByOwner(stub, args)
 	} else if function == "queryProductsByOwner" { //find products for owner X using rich query
 		return t.queryProductsByOwner(stub, args)
 	} else if function == "queryProducts" { //find products based on an ad hoc rich query
@@ -142,7 +161,7 @@ func (t *SimpleChaincode) initProduct(stub shim.ChaincodeStubInterface, args []s
 
 	// ==== Create product object and marshal to JSON ====
 	objectType := "product"
-	product := &Product{objectType, productName, desc, state, lastUpdated, owner}
+	product := &Product{objectType, productName, desc, state, lastUpdated, owner, ""}
 	productJSONasBytes, err := json.Marshal(product)
 	if err != nil {
 		return shim.Error(err.Error())
@@ -284,11 +303,51 @@ func (t *SimpleChaincode) readProduct(stub shim.ChaincodeStubInterface, args []s
 		jsonResp = "{\"Error\":\"Failed to get state for " + name + "\"}"
 		return shim.Error(jsonResp)
 	} else if valAsbytes == nil {
-		jsonResp = "{\"Error\":\"Prodcut does not exist: " + name + "\"}"
+		jsonResp = "{\"Error\":\"Product does not exist: " + name + "\"}"
 		return shim.Error(jsonResp)
 	}
 
 	return shim.Success(valAsbytes)
+}
+
+func (t *SimpleChaincode) initProductState(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	var name, jsonResp string
+	var err error
+	logger.Debug("start initProductState func")
+	if len(args) < 2 {
+		return shim.Error("Incorrect number of arguments. Expecting name of the product to query")
+	}
+
+	name = args[0]
+	org := args[1]
+	logger.Debug("initProductState prodName=" + name + " Org= " + org)
+	productAsBytes, err := stub.GetState(name) //get the product from chaincode state
+	if err != nil {
+		jsonResp = "{\"Error\":\"Failed to get state for " + name + "\"}"
+		return shim.Error(jsonResp)
+	} else if productAsBytes == nil {
+		jsonResp = "{\"Error\":\"Product does not exist: " + name + "\"}"
+		return shim.Error(jsonResp)
+	}
+	product := Product{}
+	err = json.Unmarshal(productAsBytes, &product) //unmarshal it aka JSON.parse()
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	product.OwnerNew = org
+	product.Owner = org
+
+	productJSONasBytes, _ := json.Marshal(product)
+	err = stub.PutState(name, productJSONasBytes) //rewrite the product
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	if err := product.EmitState(stub); err != nil {
+		return pb.Response{Status: 500, Message: "Event emission failure."}
+	}
+	logger.Debug("end initProductState func")
+	return shim.Success(nil)
 }
 
 // ==================================================
@@ -531,6 +590,35 @@ func (t *SimpleChaincode) queryProductsByOwner(stub shim.ChaincodeStubInterface,
 		return shim.Error(err.Error())
 	}
 	return shim.Success(queryResults)
+}
+
+func (t *SimpleChaincode) queryProductByOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+
+	// prodName
+	// Org
+
+	if len(args) < 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 1")
+	}
+
+	for k, v := range args {
+		if len(v) <= 0 {
+			return shim.Error(strconv.Itoa(k+1) + "st argument must be a non-empty string")
+		}
+	}
+
+	prodName := args[0]
+	Org := args[1]
+
+	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"product\",\"name\":\"%s\",\"owner\":\"%s\"}}", prodName, Org)
+	fmt.Printf("queryProductByOwner- Show QueryString:\n%s\n", queryString)
+	logger.Debug("queryProductByOwner - QueryString " + queryString)
+
+	queryResult, err := getQueryResultForQueryString(stub, queryString)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	return shim.Success(queryResult)
 }
 
 // ===== Example: Ad hoc rich query ========================================================
