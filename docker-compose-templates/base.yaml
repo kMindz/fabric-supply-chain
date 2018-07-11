@@ -58,7 +58,7 @@ services:
     image: maxxx1313/fabric-rest
     volumes:
      - ../artifacts:/usr/src/artifacts
-     - ../../fabric-rest/server/www-admin:/usr/src/app/www
+     - ../server/www-admin:/usr/src/app/www
     command: sh -c "npm start"
 
   www-base:
