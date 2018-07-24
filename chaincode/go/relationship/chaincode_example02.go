@@ -2,182 +2,272 @@
 package main
 
 import (
-	"strconv"
-
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 	pb "github.com/hyperledger/fabric/protos/peer"
 	"encoding/pem"
 	"crypto/x509"
 	"strings"
+	"fmt"
+	"encoding/json"
+	"errors"
 )
 
-var logger = shim.NewLogger("SimpleChaincode")
+const (
+	transferIndex = "TransferDetails"
+)
 
-// SimpleChaincode example simple Chaincode implementation
-type SimpleChaincode struct {
+const (
+	basicArgumentsNumber = 3
+	keyFieldsNumber = 3
+)
+
+const (
+	statusInitiated = "Initiated"
+	statusAccepted = "Accepted"
+	statusRejected = "Rejected"
+)
+
+var logger = shim.NewLogger("OwnershipChaincode")
+
+type TransferDetailsKey struct {
+	ProductKey      string `json:"product_key"`
+	RequestSender   string `json:"request_sender"`
+	RequestReceiver string `json:"request_receiver"`
 }
 
-func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
-	logger.Debug("Init")
+type TransferDetailsValue struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
 
-	_, args := stub.GetFunctionAndParameters()
-	var a, b string    // Entities
-	var aVal,  bVal int // Asset holdings
-	var err error
+type TransferDetails struct {
+	Key   TransferDetailsKey   `json:"key"`
+	Value TransferDetailsValue `json:"value"`
+}
 
-	if len(args) != 4 {
-		return pb.Response{Status:403, Message:"Incorrect number of arguments. Expecting 4"}
+func (details *TransferDetails) FillFromArguments(args []string) error {
+	if len(args) < basicArgumentsNumber {
+		return errors.New(fmt.Sprintf("arguments array must contain at least %d items", basicArgumentsNumber))
 	}
 
-	// Initialize the chaincode
-	a = args[0]
-	aVal, err = strconv.Atoi(args[1])
+	if err := details.FillFromCompositeKeyParts(args[:keyFieldsNumber]); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (details *TransferDetails) FillFromCompositeKeyParts(compositeKeyParts []string) error {
+	if len(compositeKeyParts) < keyFieldsNumber {
+		return errors.New(fmt.Sprintf("composite key parts array must contain at least %d items", keyFieldsNumber))
+	}
+
+	details.Key.ProductKey = compositeKeyParts[0]
+	details.Key.RequestSender = compositeKeyParts[1]
+	details.Key.RequestReceiver = compositeKeyParts[2]
+
+	return nil
+}
+
+func (details *TransferDetails) FillFromLedgerValue(ledgerValue []byte) error {
+	if err := json.Unmarshal(ledgerValue, &details.Value); err != nil {
+		return err
+	} else {
+		return nil
+	}
+}
+
+func (details *TransferDetails) ToCompositeKey(stub shim.ChaincodeStubInterface) (string, error) {
+	compositeKeyParts := []string {
+		details.Key.ProductKey,
+		details.Key.RequestSender,
+		details.Key.RequestReceiver,
+	}
+
+	return stub.CreateCompositeKey(transferIndex, compositeKeyParts)
+}
+
+func (details *TransferDetails) ToLedgerValue() ([]byte, error) {
+	return json.Marshal(details.Value)
+}
+
+func (details *TransferDetails) ExistsIn(stub shim.ChaincodeStubInterface) bool {
+	compositeKey, err := details.ToCompositeKey(stub)
 	if err != nil {
-		return pb.Response{Status:403, Message:"Expecting integer value for asset holding"}
-	}
-	b = args[2]
-	bVal, err = strconv.Atoi(args[3])
-	if err != nil {
-		return pb.Response{Status:403, Message:"Expecting integer value for asset holding"}
-	}
-	logger.Debugf("aVal, bVal = %d", aVal, bVal)
-
-	// Write the state to the ledger
-	err = stub.PutState(a, []byte(strconv.Itoa(aVal)))
-	if err != nil {
-		return shim.Error(err.Error())
+		return false
 	}
 
-	err = stub.PutState(b, []byte(strconv.Itoa(bVal)))
-	if err != nil {
-		return shim.Error(err.Error())
+	if data, err := stub.GetState(compositeKey); err != nil || data == nil {
+		return false
 	}
 
+	return true
+}
+
+func (details *TransferDetails) LoadFrom(stub shim.ChaincodeStubInterface) error {
+	compositeKey, err := details.ToCompositeKey(stub)
+	if err != nil {
+		return err
+	}
+
+	data, err := stub.GetState(compositeKey)
+	if err != nil {
+		return err
+	}
+
+	return details.FillFromLedgerValue(data)
+}
+
+func (details *TransferDetails) UpdateOrInsertIn(stub shim.ChaincodeStubInterface) error {
+	compositeKey, err := details.ToCompositeKey(stub)
+	if err != nil {
+		return err
+	}
+
+	value, err := details.ToLedgerValue()
+	if err != nil {
+		return err
+	}
+
+	if err = stub.PutState(compositeKey, value); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// OwnershipChaincode example simple Chaincode implementation
+type OwnershipChaincode struct {
+}
+
+func (t *OwnershipChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	return shim.Success(nil)
 }
 
-func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
+func (t *OwnershipChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Debug("Invoke")
 
-	creatorBytes, err := stub.GetCreator()
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	name, org := getCreator(creatorBytes)
-
-	logger.Debug("transaction creator " + name + "@" + org)
-
 	function, args := stub.GetFunctionAndParameters()
-	if function == "move" {
-		// Make payment of x units from a to b
-		return t.move(stub, args)
-	} else if function == "delete" {
-		// Deletes an entity from its state
-		return t.delete(stub, args)
+
+	if function == "sendRequest" {
+		return t.sendRequest(stub, args)
+	} else if function == "transferAccepted" {
+		return t.transferAccepted(stub, args)
+	} else if function == "transferRejected" {
+		return t.transferRejected(stub, args)
 	} else if function == "query" {
-		// the old "Query" is now implemented in invoke
 		return t.query(stub, args)
 	}
 
 	return pb.Response{Status:403, Message:"Invalid invoke function name."}
 }
 
-// Transaction makes payment of x units from a to b
-func (t *SimpleChaincode) move(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	var a, b string    // Entities
-	var aVal, bVal int // Asset holdings
-	var x int          // Transaction value
-	var err error
-
-	if len(args) != 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3")
+func (t *OwnershipChaincode) sendRequest(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	if len(args) < 4 {
+		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d", 4, len(args)))
 	}
 
-	a = args[0]
-	b = args[1]
+	// check product existence in common channel
+	// check ownership
+	// check if request sender and creator are the same
 
-	// Get the state from the ledger
-	aBytes, err := stub.GetState(a)
-	if err != nil {
+	// make a separate function for argument parsing
+	request := TransferDetails{}
+	if err := request.FillFromArguments(args); err != nil {
 		return shim.Error(err.Error())
 	}
-	if aBytes == nil {
-		return pb.Response{Status:404, Message:"Entity not found"}
-	}
-	aVal, _ = strconv.Atoi(string(aBytes))
 
-	bBytes, err := stub.GetState(b)
-	if err != nil {
-		return shim.Error("Failed to get state")
-	}
-	if bBytes == nil {
-		return pb.Response{Status:404, Message:"Entity not found"}
-	}
-	bVal, _ = strconv.Atoi(string(bBytes))
-
-	// Perform the execution
-	x, err = strconv.Atoi(args[2])
-	if err != nil {
-		return pb.Response{Status:403, Message:"Invalid transaction amount, expecting an integer value"}
-	}
-	aVal = aVal - x
-	bVal = bVal + x
-	logger.Debug("aVal = %d, bVal = %d\n", aVal, bVal)
-
-	// Write the state back to the ledger
-	err = stub.PutState(a, []byte(strconv.Itoa(aVal)))
+	// make a separate function for composite key creation
+	compositeKey, err := request.ToCompositeKey(stub)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 
-	err = stub.PutState(b, []byte(strconv.Itoa(bVal)))
-	if err != nil {
+	if bytes, err := stub.GetState(compositeKey); err != nil {
 		return shim.Error(err.Error())
+	} else if bytes != nil {
+		var rq TransferDetails
+		if err := json.Unmarshal(bytes, rq); err != nil {
+			return shim.Error(err.Error())
+		} else {
+			if rq.Value.Status == statusInitiated {
+				return shim.Error("ownership transfer is already initiated")
+			}
+		}
+	}
+
+	// make a separate function for state updating
+	if value, err := json.Marshal(request.Value); err != nil {
+		return shim.Error(err.Error())
+	} else {
+		if err := stub.PutState(compositeKey, value); err != nil {
+			return shim.Error(err.Error())
+		}
 	}
 
 	return shim.Success(nil)
 }
 
-// deletes an entity from state
-func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	if len(args) != 1 {
-		return pb.Response{Status:403, Message:"Incorrect number of arguments"}
+func (t *OwnershipChaincode) transferAccepted(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	if len(args) < 3 {
+		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d", 3, len(args)))
 	}
 
-	a := args[0]
+	// check product existence in common channel
+	// check ownership
+	// check if request receiver and creator are the same
 
-	// Delete the key from the state in ledger
-	err := stub.DelState(a)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
+	// check key existence and status == "Initiated"
+	// put state with status "Accepted"
+	// emit event containing key, old and new owners (request receiver/sender)
 
 	return shim.Success(nil)
 }
 
-// read value
-func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	var a string // Entities
-	var err error
+func (t *OwnershipChaincode) transferRejected(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	if len(args) < 3 {
+		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d", 3, len(args)))
+	}
 
-	//if len(args) != 1 {
-	//	return pb.Response{Status:403, Message:"Incorrect number of arguments"}
-	//}
+	// make a separate function for argument parsing
+	request := TransferDetails{
+		Key: TransferDetailsKey{
+			args[0], args[1], args[2],
+		},
+	}
 
-	a = args[0]
-
-	// Get the state from the ledger
-	valBytes, err := stub.GetState(a)
+	// make a separate function for composite key creation
+	compositeKey, err := stub.CreateCompositeKey(transferIndex,
+		[]string{request.Key.ProductKey, request.Key.RequestSender, request.Key.RequestReceiver})
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 
-	if valBytes == nil {
-		return pb.Response{Status:404, Message:"Entity not found"}
+	if bytes, err := stub.GetState(compositeKey); err != nil {
+		return shim.Error(err.Error())
+	} else if err := json.Unmarshal(bytes, request); err != nil {
+		return shim.Error(err.Error())
 	}
 
-	return shim.Success(valBytes)
+	if request.Value.Status != statusInitiated {
+		return shim.Error("ownership transfer wasn't initiated")
+	}
+
+	request.Value.Status = statusRejected
+
+	// make a separate function for state updating
+	if value, err := json.Marshal(request.Value); err != nil {
+		return shim.Error(err.Error())
+	} else {
+		if err := stub.PutState(compositeKey, value); err != nil {
+			return shim.Error(err.Error())
+		}
+	}
+
+	return shim.Success(nil)
+}
+func (t *OwnershipChaincode) query(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	return shim.Success(nil)
 }
 
 var getCreator = func (certificate []byte) (string, string) {
@@ -194,7 +284,7 @@ var getCreator = func (certificate []byte) (string, string) {
 }
 
 func main() {
-	err := shim.Start(new(SimpleChaincode))
+	err := shim.Start(new(OwnershipChaincode))
 	if err != nil {
 		logger.Error(err.Error())
 	}
