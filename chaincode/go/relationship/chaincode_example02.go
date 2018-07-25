@@ -136,6 +136,31 @@ func (details *TransferDetails) UpdateOrInsertIn(stub shim.ChaincodeStubInterfac
 	return nil
 }
 
+func (details *TransferDetails) EmitState(stub shim.ChaincodeStubInterface) error {
+	type eventDetails struct {
+		ProductKey string `json:"product_key"`
+		OldOwner   string `json:"old_owner"`
+		NewOwner   string `json:"new_owner"`
+	}
+
+	ed := eventDetails{
+		ProductKey: details.Key.ProductKey,
+		OldOwner: details.Key.RequestReceiver,
+		NewOwner: details.Key.RequestSender,
+	}
+
+	bytes, err := json.Marshal(ed)
+	if err != nil {
+		return err
+	}
+
+	if err = stub.SetEvent(transferIndex + "." + details.Value.Status, bytes); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // OwnershipChaincode example simple Chaincode implementation
 type OwnershipChaincode struct {
 }
@@ -163,105 +188,111 @@ func (t *OwnershipChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Respons
 }
 
 func (t *OwnershipChaincode) sendRequest(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	if len(args) < 4 {
-		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d", 4, len(args)))
+	const expectedArgumentsNumber = basicArgumentsNumber + 1
+
+	if len(args) < expectedArgumentsNumber {
+		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d",
+			expectedArgumentsNumber, len(args)))
 	}
 
-	// check product existence in common channel
-	// check ownership
-	// check if request sender and creator are the same
+	// TODO: check product existence in common channel
+	// TODO: check ownership
+	// TODO: check if request sender and creator are the same
 
-	// make a separate function for argument parsing
 	request := TransferDetails{}
 	if err := request.FillFromArguments(args); err != nil {
 		return shim.Error(err.Error())
 	}
 
-	// make a separate function for composite key creation
-	compositeKey, err := request.ToCompositeKey(stub)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	if bytes, err := stub.GetState(compositeKey); err != nil {
-		return shim.Error(err.Error())
-	} else if bytes != nil {
-		var rq TransferDetails
-		if err := json.Unmarshal(bytes, rq); err != nil {
+	if request.ExistsIn(stub) {
+		if err := request.LoadFrom(stub); err != nil {
 			return shim.Error(err.Error())
-		} else {
-			if rq.Value.Status == statusInitiated {
-				return shim.Error("ownership transfer is already initiated")
-			}
+		}
+
+		if request.Value.Status == statusInitiated {
+			return shim.Error("ownership transfer is already initiated")
 		}
 	}
 
-	// make a separate function for state updating
-	if value, err := json.Marshal(request.Value); err != nil {
+	request.Value.Status = statusInitiated
+	request.Value.Message = args[keyFieldsNumber]
+
+	if err := request.UpdateOrInsertIn(stub); err != nil {
 		return shim.Error(err.Error())
-	} else {
-		if err := stub.PutState(compositeKey, value); err != nil {
-			return shim.Error(err.Error())
-		}
 	}
 
 	return shim.Success(nil)
 }
 
 func (t *OwnershipChaincode) transferAccepted(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	if len(args) < 3 {
-		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d", 3, len(args)))
+	if len(args) < basicArgumentsNumber {
+		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d",
+			basicArgumentsNumber, len(args)))
 	}
 
-	// check product existence in common channel
-	// check ownership
-	// check if request receiver and creator are the same
+	// TODO: check product existence in common channel
+	// TODO: check ownership
+	// TODO: check if request receiver and creator are the same
 
-	// check key existence and status == "Initiated"
-	// put state with status "Accepted"
-	// emit event containing key, old and new owners (request receiver/sender)
+	details := TransferDetails{}
+	if err := details.FillFromArguments(args); err != nil {
+		return shim.Error(err.Error())
+	}
+
+	if !details.ExistsIn(stub) {
+		return shim.Error("ownership transfer wasn't initiated")
+	}
+
+	if err := details.LoadFrom(stub); err != nil {
+		return shim.Error(err.Error())
+	}
+
+	if details.Value.Status != statusInitiated {
+		return shim.Error("ownership transfer wasn't initiated")
+	}
+
+	details.Value.Status = statusAccepted
+
+	if err := details.UpdateOrInsertIn(stub); err != nil {
+		return shim.Error(err.Error())
+	}
+
+	if err := details.EmitState(stub); err != nil {
+		return shim.Error(err.Error())
+	}
 
 	return shim.Success(nil)
 }
 
 func (t *OwnershipChaincode) transferRejected(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	if len(args) < 3 {
-		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d", 3, len(args)))
+	if len(args) < basicArgumentsNumber {
+		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d",
+			basicArgumentsNumber, len(args)))
 	}
 
-	// make a separate function for argument parsing
-	request := TransferDetails{
-		Key: TransferDetailsKey{
-			args[0], args[1], args[2],
-		},
-	}
+	// TODO: check if details receiver and creator are the same
 
-	// make a separate function for composite key creation
-	compositeKey, err := stub.CreateCompositeKey(transferIndex,
-		[]string{request.Key.ProductKey, request.Key.RequestSender, request.Key.RequestReceiver})
-	if err != nil {
+	details := TransferDetails{}
+	if err := details.FillFromArguments(args); err != nil {
 		return shim.Error(err.Error())
 	}
 
-	if bytes, err := stub.GetState(compositeKey); err != nil {
-		return shim.Error(err.Error())
-	} else if err := json.Unmarshal(bytes, request); err != nil {
-		return shim.Error(err.Error())
-	}
-
-	if request.Value.Status != statusInitiated {
+	if !details.ExistsIn(stub) {
 		return shim.Error("ownership transfer wasn't initiated")
 	}
 
-	request.Value.Status = statusRejected
-
-	// make a separate function for state updating
-	if value, err := json.Marshal(request.Value); err != nil {
+	if err := details.LoadFrom(stub); err != nil {
 		return shim.Error(err.Error())
-	} else {
-		if err := stub.PutState(compositeKey, value); err != nil {
-			return shim.Error(err.Error())
-		}
+	}
+
+	if details.Value.Status != statusInitiated {
+		return shim.Error("ownership transfer wasn't initiated")
+	}
+
+	details.Value.Status = statusRejected
+
+	if err := details.UpdateOrInsertIn(stub); err != nil {
+		return shim.Error(err.Error())
 	}
 
 	return shim.Success(nil)
