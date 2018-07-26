@@ -339,7 +339,61 @@ func (t *OwnershipChaincode) query(stub shim.ChaincodeStubInterface, args []stri
 }
 
 func (t *OwnershipChaincode) history(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	return shim.Success(nil)
+	const expectedArgumentsNumber = 1
+
+	if len(args) < expectedArgumentsNumber {
+		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d",
+			expectedArgumentsNumber, len(args)))
+	}
+
+	queryIterator, err := stub.GetStateByPartialCompositeKey(transferIndex, []string{args[0]})
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	defer queryIterator.Close()
+
+	entries := []TransferDetails{}
+	for queryIterator.HasNext() {
+		queryResponse, err := queryIterator.Next()
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		historyIterator, err := stub.GetHistoryForKey(queryResponse.Key)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		for historyIterator.HasNext() {
+			historyResponse, err := historyIterator.Next()
+			if err != nil {
+				return shim.Error(err.Error())
+			}
+
+			entry := TransferDetails{}
+
+			if err := entry.FillFromLedgerValue(historyResponse.Value); err != nil {
+				return shim.Error(err.Error())
+			}
+
+			_, compositeKeyParts, err := stub.SplitCompositeKey(queryResponse.Key)
+			if err != nil {
+				return shim.Error(err.Error())
+			}
+
+			if err := entry.FillFromCompositeKeyParts(compositeKeyParts); err != nil {
+				return shim.Error(err.Error())
+			}
+		}
+		historyIterator.Close()
+	}
+
+	result, err := json.Marshal(entries)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	return shim.Success(result)
 }
 
 var getCreator = func (certificate []byte) (string, string) {
