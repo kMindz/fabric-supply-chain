@@ -182,6 +182,8 @@ func (t *OwnershipChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Respons
 		return t.transferRejected(stub, args)
 	} else if function == "query" {
 		return t.query(stub, args)
+	} else if function == "history" {
+		return t.history(stub, args)
 	}
 
 	return pb.Response{Status:403, Message:"Invalid invoke function name."}
@@ -297,7 +299,46 @@ func (t *OwnershipChaincode) transferRejected(stub shim.ChaincodeStubInterface, 
 
 	return shim.Success(nil)
 }
+
 func (t *OwnershipChaincode) query(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	it, err := stub.GetStateByPartialCompositeKey(transferIndex, []string{})
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	defer it.Close()
+
+	entries := []TransferDetails{}
+	for it.HasNext() {
+		response, err := it.Next()
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		entry := TransferDetails{}
+
+		if err := entry.FillFromLedgerValue(response.Value); err != nil {
+			return shim.Error(err.Error())
+		}
+
+		_, compositeKeyParts, err := stub.SplitCompositeKey(response.Key)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		if err := entry.FillFromCompositeKeyParts(compositeKeyParts); err != nil {
+			return shim.Error(err.Error())
+		}
+	}
+
+	result, err := json.Marshal(entries)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	return shim.Success(result)
+}
+
+func (t *OwnershipChaincode) history(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	return shim.Success(nil)
 }
 
