@@ -16,6 +16,14 @@ import (
 
 var logger = shim.NewLogger("SimpleChaincode")
 
+const (
+	stateUnknown = iota
+	stateRegistered
+	stateActive
+	stateDecisionMaking
+	stateInactive
+)
+
 // SimpleChaincode example simple Chaincode implementation
 type SimpleChaincode struct {
 }
@@ -30,10 +38,10 @@ type Product struct {
 }
 
 var productStateMachine = map[int][]int{
-	1: {1, 2},
-	2: {2, 3},
-	3: {2, 3, 4},
-	4: {4},
+	stateRegistered: {stateRegistered, stateActive},
+	stateActive: {stateActive, stateDecisionMaking},
+	stateDecisionMaking: {stateActive, stateDecisionMaking, stateInactive},
+	stateInactive: {stateInactive},
 }
 
 // ===================================================================================
@@ -74,6 +82,8 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		return t.initProduct(stub, args)
 	} else if function == "updateProduct" { //update a existing product
 		return t.updateProduct(stub, args)
+	} else if function == "updateOwner" { //update a existing product
+		return t.updateOwner(stub, args)
 	} else if function == "transferProduct" { //change owner of a specific product
 		return t.transferProduct(stub, args)
 	} else if function == "transferProductsBasedOnState" { //transfer all products of a certain state
@@ -673,6 +683,63 @@ func (t *SimpleChaincode) getHistoryForProduct(stub shim.ChaincodeStubInterface,
 	logger.Debug("- getHistoryForProduct returning:\n%s\n", buffer.String())
 
 	return shim.Success(buffer.Bytes())
+}
+
+func (t *SimpleChaincode) updateOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	var err error
+
+	//      0          1         2          3
+	// productName, oldOwner, newOwner, timestamp
+	if len(args) < 4 {
+		return shim.Error(fmt.Sprintf("Incorrect number of arguments. Expecting %d", 4))
+	}
+
+	// ==== Input sanitation ====
+	for k, v := range args {
+		if len(v) <= 0 {
+			return shim.Error(fmt.Sprintf("Argument #%d must be a non-empty string", k + 1))
+		}
+	}
+
+	// TODO: check if creator org and oldOwner are the same
+
+	productName := args[0]
+	oldOwner := args[1]
+	newOwner := args[2]
+	lastUpdated, err := strconv.Atoi(args[3])
+	if err != nil {
+		return shim.Error("Product date updated must be timestamp. Error: " + err.Error())
+	}
+
+	productAsBytes, err := stub.GetState(productName)
+	if err != nil {
+		return shim.Error("Failed to get product:" + err.Error())
+	} else if productAsBytes == nil {
+		return shim.Error("Product does not exist")
+	}
+
+	productToUpdate := Product{}
+	err = json.Unmarshal(productAsBytes, &productToUpdate) //unmarshal it aka JSON.parse()
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	if productToUpdate.Owner != oldOwner {
+		return shim.Error("The specified product doesn't belong to the specified owner.")
+	}
+
+	productToUpdate.Owner = newOwner
+	productToUpdate.LastUpdated = lastUpdated
+
+	productJSONasBytes, _ := json.Marshal(productToUpdate)
+	err = stub.PutState(productName, productJSONasBytes) //rewrite the product
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	// ==== Product updated and indexed. Return success ====
+	logger.Debug("- end update owner")
+	return shim.Success(nil)
 }
 
 var getCreator = func(certificate []byte) (string, string) {
