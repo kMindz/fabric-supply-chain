@@ -199,11 +199,14 @@ func (t *OwnershipChaincode) sendRequest(stub shim.ChaincodeStubInterface, args 
 
 	// TODO: check product existence in common channel
 	// TODO: check ownership
-	// TODO: check if request sender and creator are the same
 
 	request := TransferDetails{}
 	if err := request.FillFromArguments(args); err != nil {
 		return shim.Error(err.Error())
+	}
+
+	if GetCreatorOrganization(stub) != request.Key.RequestSender {
+		return shim.Error(fmt.Sprintf("no privileges to send request from the side of %s", request.Key.RequestSender))
 	}
 
 	if request.ExistsIn(stub) {
@@ -234,11 +237,14 @@ func (t *OwnershipChaincode) transferAccepted(stub shim.ChaincodeStubInterface, 
 
 	// TODO: check product existence in common channel
 	// TODO: check ownership
-	// TODO: check if request receiver and creator are the same
 
 	details := TransferDetails{}
 	if err := details.FillFromArguments(args); err != nil {
 		return shim.Error(err.Error())
+	}
+
+	if GetCreatorOrganization(stub) != details.Key.RequestReceiver {
+		return shim.Error(fmt.Sprintf("no privileges to send request from the side of %s", details.Key.RequestReceiver))
 	}
 
 	if !details.ExistsIn(stub) {
@@ -272,11 +278,13 @@ func (t *OwnershipChaincode) transferRejected(stub shim.ChaincodeStubInterface, 
 			basicArgumentsNumber, len(args)))
 	}
 
-	// TODO: check if details receiver and creator are the same
-
 	details := TransferDetails{}
 	if err := details.FillFromArguments(args); err != nil {
 		return shim.Error(err.Error())
+	}
+
+	if GetCreatorOrganization(stub) != details.Key.RequestReceiver {
+		return shim.Error(fmt.Sprintf("no privileges to send request from the side of %s", details.Key.RequestReceiver))
 	}
 
 	if !details.ExistsIn(stub) {
@@ -396,17 +404,17 @@ func (t *OwnershipChaincode) history(stub shim.ChaincodeStubInterface, args []st
 	return shim.Success(result)
 }
 
-var getCreator = func (certificate []byte) (string, string) {
-	data := certificate[strings.Index(string(certificate), "-----"): strings.LastIndex(string(certificate), "-----")+5]
+func getOrganization(certificate []byte) string {
+	data := certificate[strings.Index(string(certificate), "-----") : strings.LastIndex(string(certificate), "-----")+5]
 	block, _ := pem.Decode([]byte(data))
 	cert, _ := x509.ParseCertificate(block.Bytes)
 	organization := cert.Issuer.Organization[0]
-	commonName := cert.Subject.CommonName
-	logger.Debug("commonName: " + commonName + ", organization: " + organization)
+	return organization
+}
 
-	organizationShort := strings.Split(organization, ".")[0]
-
-	return commonName, organizationShort
+func GetCreatorOrganization(stub shim.ChaincodeStubInterface) string {
+	certificate, _ := stub.GetCreator()
+	return getOrganization(certificate)
 }
 
 func main() {

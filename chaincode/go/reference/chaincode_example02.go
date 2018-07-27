@@ -701,8 +701,6 @@ func (t *SimpleChaincode) updateOwner(stub shim.ChaincodeStubInterface, args []s
 		}
 	}
 
-	// TODO: check if creator org and oldOwner are the same
-
 	productName := args[0]
 	oldOwner := args[1]
 	newOwner := args[2]
@@ -710,6 +708,11 @@ func (t *SimpleChaincode) updateOwner(stub shim.ChaincodeStubInterface, args []s
 	if err != nil {
 		return shim.Error("Product date updated must be timestamp. Error: " + err.Error())
 	}
+
+	// TODO: check if creator org and oldOwner are the same
+	//if GetCreatorOrganization(stub) != oldOwner {
+	//	return shim.Error(fmt.Sprintf("no privileges to send request from the side of %s", oldOwner))
+	//}
 
 	productAsBytes, err := stub.GetState(productName)
 	if err != nil {
@@ -742,17 +745,17 @@ func (t *SimpleChaincode) updateOwner(stub shim.ChaincodeStubInterface, args []s
 	return shim.Success(nil)
 }
 
-var getCreator = func(certificate []byte) (string, string) {
+func getOrganization(certificate []byte) string {
 	data := certificate[strings.Index(string(certificate), "-----") : strings.LastIndex(string(certificate), "-----")+5]
 	block, _ := pem.Decode([]byte(data))
 	cert, _ := x509.ParseCertificate(block.Bytes)
 	organization := cert.Issuer.Organization[0]
-	commonName := cert.Subject.CommonName
-	logger.Debug("commonName: " + commonName + ", organization: " + organization)
+	return organization
+}
 
-	organizationShort := strings.Split(organization, ".")[0]
-
-	return commonName, organizationShort
+func GetCreatorOrganization(stub shim.ChaincodeStubInterface) string {
+	certificate, _ := stub.GetCreator()
+	return getOrganization(certificate)
 }
 
 var mapKey = func(m map[int][]int, value int) (check bool) {
