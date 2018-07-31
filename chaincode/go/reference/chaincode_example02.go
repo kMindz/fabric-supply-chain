@@ -2,7 +2,6 @@ package main
 
 import (
 	"strconv"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"time"
