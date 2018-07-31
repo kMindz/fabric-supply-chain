@@ -17,6 +17,14 @@ import (
 var logger = shim.NewLogger("SimpleChaincode")
 
 const (
+	productIndex = "product"
+)
+
+const (
+	stateIndexName = "state~name"
+)
+
+const (
 	stateUnknown = iota
 	stateRegistered
 	stateActive
@@ -29,8 +37,16 @@ type SimpleChaincode struct {
 }
 
 type Product struct {
-	ObjectType  string `json:"docType"` //docType is used to distinguish the various types of objects in state database
-	Name        string `json:"name"`    //the fieldtags are needed to keep case from bouncing around
+	Key   ProductKey   `json:"key"`
+	Value ProductValue `json:"value"`
+}
+
+type ProductKey struct {
+	Name string `json:"name"`
+}
+
+type ProductValue struct {
+	ObjectType  string `json:"docType"`
 	Desc        string `json:"desc"`
 	State       int    `json:"state"`
 	LastUpdated int    `json:"lastUpdated"`
@@ -143,8 +159,10 @@ func (t *SimpleChaincode) initProduct(stub shim.ChaincodeStubInterface, args []s
 	}
 
 	// ==== Create product object and marshal to JSON ====
-	objectType := "product"
-	product := &Product{objectType, productName, desc, state, lastUpdated, owner}
+	product := Product{
+		Key:   ProductKey{productName},
+		Value: ProductValue{productIndex,desc, state, lastUpdated, owner},
+	}
 	productJSONasBytes, err := json.Marshal(product)
 	if err != nil {
 		return shim.Error(err.Error())
@@ -162,10 +180,9 @@ func (t *SimpleChaincode) initProduct(stub shim.ChaincodeStubInterface, args []s
 	//  ==== Index the product to enable state-based range queries, e.g. return all Active products ====
 	//  An 'index' is a normal key/value entry in state.
 	//  The key is a composite key, with the elements that you want to range query on listed first.
-	//  In our case, the composite key is based on indexName~state~name.
-	//  This will enable very efficient state range queries based on composite keys matching indexName~state~*
-	indexName := "state~name"
-	stateIndexKey, err := stub.CreateCompositeKey(indexName, []string{strconv.Itoa(product.State), product.Name})
+	//  In our case, the composite key is based on stateIndexName~state~name.
+	//  This will enable very efficient state range queries based on composite keys matching stateIndexName~state~*
+	stateIndexKey, err := stub.CreateCompositeKey(stateIndexName, []string{strconv.Itoa(product.Value.State), product.Key.Name})
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -225,14 +242,14 @@ func (t *SimpleChaincode) updateProduct(stub shim.ChaincodeStubInterface, args [
 
 	// ==== Check if state not legal ====
 	legalState := mapKey(productStateMachine, newState)
-	legalStateMachine := checkNewState(productStateMachine, productToUpdate.State, newState)
+	legalStateMachine := checkNewState(productStateMachine, productToUpdate.Value.State, newState)
 	if !legalState || !legalStateMachine {
 		return shim.Error("Not legal product state")
 	}
-	productToUpdate.Desc = newDesc
-	productToUpdate.State = newState
-	productToUpdate.Owner = newOwner
-	productToUpdate.LastUpdated = lastUpdated
+	productToUpdate.Value.Desc = newDesc
+	productToUpdate.Value.State = newState
+	productToUpdate.Value.Owner = newOwner
+	productToUpdate.Value.LastUpdated = lastUpdated
 
 	productJSONasBytes, _ := json.Marshal(productToUpdate)
 	err = stub.PutState(productName, productJSONasBytes) //rewrite the product
@@ -241,10 +258,10 @@ func (t *SimpleChaincode) updateProduct(stub shim.ChaincodeStubInterface, args [
 	}
 
 	// maintain the index
-	if productToUpdate.State != newState {
+	if productToUpdate.Value.State != newState {
 		//delete old index
-		indexName := "state~name"
-		stateIndexKey, err := stub.CreateCompositeKey(indexName, []string{strconv.Itoa(productToUpdate.State), productToUpdate.Name})
+		stateIndexKey, err := stub.CreateCompositeKey(stateIndexName,
+			[]string{strconv.Itoa(productToUpdate.Value.State), productToUpdate.Key.Name})
 		if err != nil {
 			return shim.Error(err.Error())
 		}
@@ -255,7 +272,8 @@ func (t *SimpleChaincode) updateProduct(stub shim.ChaincodeStubInterface, args [
 			return shim.Error("Failed to delete state:" + err.Error())
 		}
 		//create new index
-		stateIndexKey, err = stub.CreateCompositeKey(indexName, []string{strconv.Itoa(newState), productToUpdate.Name})
+		stateIndexKey, err = stub.CreateCompositeKey(stateIndexName,
+			[]string{strconv.Itoa(newState), productToUpdate.Key.Name})
 		if err != nil {
 			return shim.Error(err.Error())
 		}
@@ -326,8 +344,8 @@ func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string
 	}
 
 	// maintain the index
-	indexName := "state~name"
-	stateIndexKey, err := stub.CreateCompositeKey(indexName, []string{strconv.Itoa(productJSON.State), productJSON.Name})
+	stateIndexKey, err := stub.CreateCompositeKey(stateIndexName,
+		[]string{strconv.Itoa(productJSON.Value.State), productJSON.Key.Name})
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -367,7 +385,7 @@ func (t *SimpleChaincode) transferProduct(stub shim.ChaincodeStubInterface, args
 	if err != nil {
 		return shim.Error(err.Error())
 	}
-	productToTransfer.Owner = newOwner //change the owner
+	productToTransfer.Value.Owner = newOwner //change the owner
 
 	productJSONasBytes, _ := json.Marshal(productToTransfer)
 	err = stub.PutState(productName, productJSONasBytes) //rewrite the product
@@ -405,36 +423,36 @@ func (t *SimpleChaincode) getProductsByRange(stub shim.ChaincodeStubInterface, a
 	}
 	defer resultsIterator.Close()
 
-	// buffer is a JSON array containing QueryResults
-	var buffer bytes.Buffer
-	buffer.WriteString("[")
+	entries := []Product{}
 
-	bArrayMemberAlreadyWritten := false
 	for resultsIterator.HasNext() {
-		queryResponse, err := resultsIterator.Next()
+		response, err := resultsIterator.Next()
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		// Add a comma before array members, suppress it for the first array member
-		if bArrayMemberAlreadyWritten == true {
-			buffer.WriteString(",")
+
+		entry := Product{}
+
+		if err := json.Unmarshal(response.Value, &entry.Value); err != nil {
+			return shim.Error(err.Error())
 		}
-		buffer.WriteString("{\"Key\":")
-		buffer.WriteString("\"")
-		buffer.WriteString(queryResponse.Key)
-		buffer.WriteString("\"")
 
-		buffer.WriteString(", \"Record\":")
-		// Record is a JSON object, so we write as-is
-		buffer.WriteString(string(queryResponse.Value))
-		buffer.WriteString("}")
-		bArrayMemberAlreadyWritten = true
+		_, compositeKeyParts, err := stub.SplitCompositeKey(response.Key)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		entry.Key.Name = compositeKeyParts[0]
+
+		entries = append(entries, entry)
 	}
-	buffer.WriteString("]")
 
-	logger.Debug("- getProductsByRange queryResult:\n%s\n", buffer.String())
+	result, err := json.Marshal(entries)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
 
-	return shim.Success(buffer.Bytes())
+	return shim.Success(result)
 }
 
 // ==== Example: GetStateByPartialCompositeKey/RangeQuery =========================================
@@ -580,36 +598,36 @@ func getQueryResultForQueryString(stub shim.ChaincodeStubInterface, queryString 
 	}
 	defer resultsIterator.Close()
 
-	// buffer is a JSON array containing QueryRecords
-	var buffer bytes.Buffer
-	buffer.WriteString("[")
+	entries := []Product{}
 
-	bArrayMemberAlreadyWritten := false
 	for resultsIterator.HasNext() {
-		queryResponse, err := resultsIterator.Next()
+		response, err := resultsIterator.Next()
 		if err != nil {
 			return nil, err
 		}
-		// Add a comma before array members, suppress it for the first array member
-		if bArrayMemberAlreadyWritten == true {
-			buffer.WriteString(",")
+
+		entry := Product{}
+
+		if err := json.Unmarshal(response.Value, &entry.Value); err != nil {
+			return nil, err
 		}
-		buffer.WriteString("{\"Key\":")
-		buffer.WriteString("\"")
-		buffer.WriteString(queryResponse.Key)
-		buffer.WriteString("\"")
 
-		buffer.WriteString(", \"Record\":")
-		// Record is a JSON object, so we write as-is
-		buffer.WriteString(string(queryResponse.Value))
-		buffer.WriteString("}")
-		bArrayMemberAlreadyWritten = true
+		_, compositeKeyParts, err := stub.SplitCompositeKey(response.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		entry.Key.Name = compositeKeyParts[0]
+
+		entries = append(entries, entry)
 	}
-	buffer.WriteString("]")
 
-	fmt.Printf("- getQueryResultForQueryString queryResult:\n%s\n", buffer.String())
+	result, err := json.Marshal(entries)
+	if err != nil {
+		return nil, err
+	}
 
-	return buffer.Bytes(), nil
+	return result, nil
 }
 
 func (t *SimpleChaincode) getHistoryForProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
@@ -628,53 +646,40 @@ func (t *SimpleChaincode) getHistoryForProduct(stub shim.ChaincodeStubInterface,
 	}
 	defer resultsIterator.Close()
 
-	// buffer is a JSON array containing historic values for the product
-	var buffer bytes.Buffer
-	buffer.WriteString("[")
+	type productHistory struct {
+		Value ProductValue `json:"value"`
+		TxId string `json:"txId"`
+		Timestamp string `json:"timestamp"`
+		IsDelete bool `json:"isDelete"`
+	}
 
-	bArrayMemberAlreadyWritten := false
+	entries := []productHistory{}
+
 	for resultsIterator.HasNext() {
 		response, err := resultsIterator.Next()
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		// Add a comma before array members, suppress it for the first array member
-		if bArrayMemberAlreadyWritten == true {
-			buffer.WriteString(",")
-		}
-		buffer.WriteString("{\"TxId\":")
-		buffer.WriteString("\"")
-		buffer.WriteString(response.TxId)
-		buffer.WriteString("\"")
 
-		buffer.WriteString(", \"Value\":")
-		// if it was a delete operation on given key, then we need to set the
-		//corresponding value null. Else, we will write the response.Value
-		//as-is (as the Value itself a JSON product)
-		if response.IsDelete {
-			buffer.WriteString("null")
-		} else {
-			buffer.WriteString(string(response.Value))
+		entry := productHistory{}
+
+		if err := json.Unmarshal(response.Value, &entry.Value); err != nil {
+			return shim.Error(err.Error())
 		}
 
-		buffer.WriteString(", \"Timestamp\":")
-		buffer.WriteString("\"")
-		buffer.WriteString(time.Unix(response.Timestamp.Seconds, int64(response.Timestamp.Nanos)).String())
-		buffer.WriteString("\"")
+		entry.TxId = response.TxId
+		entry.Timestamp = time.Unix(response.Timestamp.Seconds, int64(response.Timestamp.Nanos)).String()
+		entry.IsDelete = response.IsDelete
 
-		buffer.WriteString(", \"IsDelete\":")
-		buffer.WriteString("\"")
-		buffer.WriteString(strconv.FormatBool(response.IsDelete))
-		buffer.WriteString("\"")
-
-		buffer.WriteString("}")
-		bArrayMemberAlreadyWritten = true
+		entries = append(entries, entry)
 	}
-	buffer.WriteString("]")
 
-	logger.Debug("- getHistoryForProduct returning:\n%s\n", buffer.String())
+	result, err := json.Marshal(entries)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
 
-	return shim.Success(buffer.Bytes())
+	return shim.Success(result)
 }
 
 func (t *SimpleChaincode) updateOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
@@ -719,12 +724,12 @@ func (t *SimpleChaincode) updateOwner(stub shim.ChaincodeStubInterface, args []s
 		return shim.Error(err.Error())
 	}
 
-	if productToUpdate.Owner != oldOwner {
+	if productToUpdate.Value.Owner != oldOwner {
 		return shim.Error("The specified product doesn't belong to the specified owner.")
 	}
 
-	productToUpdate.Owner = newOwner
-	productToUpdate.LastUpdated = lastUpdated
+	productToUpdate.Value.Owner = newOwner
+	productToUpdate.Value.LastUpdated = lastUpdated
 
 	productJSONasBytes, _ := json.Marshal(productToUpdate)
 	err = stub.PutState(productName, productJSONasBytes) //rewrite the product
