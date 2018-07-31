@@ -206,7 +206,9 @@ func (t *OwnershipChaincode) sendRequest(stub shim.ChaincodeStubInterface, args 
 	}
 
 	if GetCreatorOrganization(stub) != request.Key.RequestSender {
-		return shim.Error(fmt.Sprintf("no privileges to send request from the side of %s", request.Key.RequestSender))
+		return shim.Error(fmt.Sprintf(
+			"no privileges to send request from the side of organization %s (caller is from organization %s)",
+			request.Key.RequestSender, GetCreatorOrganization(stub)))
 	}
 
 	if request.ExistsIn(stub) {
@@ -244,7 +246,9 @@ func (t *OwnershipChaincode) transferAccepted(stub shim.ChaincodeStubInterface, 
 	}
 
 	if GetCreatorOrganization(stub) != details.Key.RequestReceiver {
-		return shim.Error(fmt.Sprintf("no privileges to send request from the side of %s", details.Key.RequestReceiver))
+		return shim.Error(fmt.Sprintf(
+			"no privileges to accept transfer from the side of organization %s (caller is from organization %s)",
+			details.Key.RequestReceiver, GetCreatorOrganization(stub)))
 	}
 
 	if !details.ExistsIn(stub) {
@@ -284,7 +288,9 @@ func (t *OwnershipChaincode) transferRejected(stub shim.ChaincodeStubInterface, 
 	}
 
 	if GetCreatorOrganization(stub) != details.Key.RequestReceiver {
-		return shim.Error(fmt.Sprintf("no privileges to send request from the side of %s", details.Key.RequestReceiver))
+		return shim.Error(fmt.Sprintf(
+			"no privileges to reject transfer from the side of organization %s (caller is from organization %s)",
+			details.Key.RequestReceiver, GetCreatorOrganization(stub)))
 	}
 
 	if !details.ExistsIn(stub) {
