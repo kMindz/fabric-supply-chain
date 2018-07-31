@@ -417,7 +417,7 @@ func getOrganization(certificate []byte) string {
 	block, _ := pem.Decode([]byte(data))
 	cert, _ := x509.ParseCertificate(block.Bytes)
 	organization := cert.Issuer.Organization[0]
-	return organization
+	return strings.Split(organization, ".")[0]
 }
 
 func GetCreatorOrganization(stub shim.ChaincodeStubInterface) string {
