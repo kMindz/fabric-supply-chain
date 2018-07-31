@@ -336,6 +336,8 @@ func (t *OwnershipChaincode) query(stub shim.ChaincodeStubInterface, args []stri
 		if err := entry.FillFromCompositeKeyParts(compositeKeyParts); err != nil {
 			return shim.Error(err.Error())
 		}
+
+		entries = append(entries, entry)
 	}
 
 	result, err := json.Marshal(entries)
