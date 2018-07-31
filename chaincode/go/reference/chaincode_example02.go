@@ -59,16 +59,6 @@ var productStateMachine = map[int][]int{
 	stateInactive: {stateInactive},
 }
 
-// ===================================================================================
-// Main
-// ===================================================================================
-func main() {
-	err := shim.Start(new(SimpleChaincode))
-	if err != nil {
-		logger.Error(err.Error())
-	}
-}
-
 // Init initializes chaincode
 // ===========================
 func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
@@ -87,26 +77,20 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	// Handle different functions
 	if function == "initProduct" { //create a new product
 		return t.initProduct(stub, args)
-	} else if function == "updateProduct" { //update a existing product
+	} else if function == "updateProduct" { //update an existing product
 		return t.updateProduct(stub, args)
-	} else if function == "updateOwner" { //update a existing product
+	} else if function == "updateOwner" { //update an owner of an existing product
 		return t.updateOwner(stub, args)
-	} else if function == "transferProduct" { //change owner of a specific product
-		return t.transferProduct(stub, args)
-	} else if function == "transferProductsBasedOnState" { //transfer all products of a certain state
-		return t.transferProductsBasedOnState(stub, args)
 	} else if function == "delete" { //delete a product
 		return t.delete(stub, args)
 	} else if function == "readProduct" { //read a product
 		return t.readProduct(stub, args)
-	} else if function == "queryProductsByOwner" { //find products for owner X using rich query
+	} else if function == "queryProductsByOwner" { //find products for the owner X using rich query
 		return t.queryProductsByOwner(stub, args)
 	} else if function == "queryProducts" { //find products based on an ad hoc rich query
 		return t.queryProducts(stub, args)
 	} else if function == "getHistoryForProduct" { //get history of values for a product
 		return t.getHistoryForProduct(stub, args)
-	} else if function == "getProductsByRange" { //get products based on range query
-		return t.getProductsByRange(stub, args)
 	}
 
 	logger.Debug("invoke did not find func: " + function) //error
@@ -357,176 +341,6 @@ func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string
 	return shim.Success(nil)
 }
 
-// ===========================================================
-// transfer a product by setting a new owner name on the product
-// ===========================================================
-func (t *SimpleChaincode) transferProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	//   0       1
-	// "book", "OrgB"
-	if len(args) < 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
-	}
-
-	productName := args[0]
-	newOwner := strings.ToLower(args[1])
-	logger.Debug("- start transferProduct ", productName, newOwner)
-
-	productAsBytes, err := stub.GetState(productName)
-	if err != nil {
-		return shim.Error("Failed to get product:" + err.Error())
-	} else if productAsBytes == nil {
-		return shim.Error("Product does not exist")
-	}
-
-	productToTransfer := Product{}
-	err = json.Unmarshal(productAsBytes, &productToTransfer) //unmarshal it aka JSON.parse()
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-	productToTransfer.Value.Owner = newOwner //change the owner
-
-	productJSONasBytes, _ := json.Marshal(productToTransfer)
-	err = stub.PutState(productName, productJSONasBytes) //rewrite the product
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	logger.Debug("- end transferProduct (success)")
-	return shim.Success(nil)
-}
-
-// ===========================================================================================
-// getProductsByRange performs a range query based on the start and end keys provided.
-
-// Read-only function results are not typically submitted to ordering. If the read-only
-// results are submitted to ordering, or if the query is used in an update transaction
-// and submitted to ordering, then the committing peers will re-execute to guarantee that
-// result sets are stable between endorsement time and commit time. The transaction is
-// invalidated by the committing peers if the result set has changed between endorsement
-// time and commit time.
-// Therefore, range queries are a safe option for performing update transactions based on query results.
-// ===========================================================================================
-func (t *SimpleChaincode) getProductsByRange(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	if len(args) < 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
-	}
-
-	startKey := args[0]
-	endKey := args[1]
-
-	resultsIterator, err := stub.GetStateByRange(startKey, endKey)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-	defer resultsIterator.Close()
-
-	entries := []Product{}
-
-	for resultsIterator.HasNext() {
-		response, err := resultsIterator.Next()
-		if err != nil {
-			return shim.Error(err.Error())
-		}
-
-		entry := Product{}
-
-		if err := json.Unmarshal(response.Value, &entry.Value); err != nil {
-			return shim.Error(err.Error())
-		}
-
-		_, compositeKeyParts, err := stub.SplitCompositeKey(response.Key)
-		if err != nil {
-			return shim.Error(err.Error())
-		}
-
-		entry.Key.Name = compositeKeyParts[0]
-
-		entries = append(entries, entry)
-	}
-
-	result, err := json.Marshal(entries)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	return shim.Success(result)
-}
-
-// ==== Example: GetStateByPartialCompositeKey/RangeQuery =========================================
-// transferProductsBasedOnState will transfer products of a given state to a certain new owner.
-// Uses a GetStateByPartialCompositeKey (range query) against state~name 'index'.
-// Committing peers will re-execute range queries to guarantee that result sets are stable
-// between endorsement time and commit time. The transaction is invalidated by the
-// committing peers if the result set has changed between endorsement time and commit time.
-// Therefore, range queries are a safe option for performing update transactions based on query results.
-// ===========================================================================================
-func (t *SimpleChaincode) transferProductsBasedOnState(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	//   0        1
-	// "Active", "OrgB"
-	if len(args) < 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
-	}
-
-	state := args[0]
-	newOwner := strings.ToLower(args[1])
-	logger.Debug("- start transferProductsBasedOnState ", state, newOwner)
-
-	// Query the state~name index by state
-	// This will execute a key range query on all keys starting with 'state'
-	statedProductResultsIterator, err := stub.GetStateByPartialCompositeKey("state~name", []string{state})
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-	defer statedProductResultsIterator.Close()
-
-	// Iterate through result set and for each product found, transfer to newOwner
-	var i int
-	for i = 0; statedProductResultsIterator.HasNext(); i++ {
-		// Note that we don't get the value (2nd return variable), we'll just get the product name from the composite key
-		responseRange, err := statedProductResultsIterator.Next()
-		if err != nil {
-			return shim.Error(err.Error())
-		}
-
-		// get the state and name from state~name composite key
-		objectType, compositeKeyParts, err := stub.SplitCompositeKey(responseRange.Key)
-		if err != nil {
-			return shim.Error(err.Error())
-		}
-		returnedState := compositeKeyParts[0]
-		returnedProductName := compositeKeyParts[1]
-		logger.Debug("- found a product from index:%s state:%s name:%s\n", objectType, returnedState, returnedProductName)
-
-		// Now call the transfer function for the found product.
-		// Re-use the same function that is used to transfer individual products
-		response := t.transferProduct(stub, []string{returnedProductName, newOwner})
-		// if the transfer failed break out of loop and return error
-		if response.Status != shim.OK {
-			return shim.Error("Transfer failed: " + response.Message)
-		}
-	}
-
-	responsePayload := fmt.Sprintf("Transferred %d %s products to %s", i, state, newOwner)
-	fmt.Println("- end transferProductsBasedOnState: " + responsePayload)
-	return shim.Success([]byte(responsePayload))
-}
-
-// =======Rich queries =========================================================================
-// Two examples of rich queries are provided below (parameterized query and ad hoc query).
-// Rich queries pass a query string to the state database.
-// Rich queries are only supported by state database implementations
-//  that support rich query (e.g. CouchDB).
-// The query string is in the syntax of the underlying state database.
-// With rich queries there is no guarantee that the result set hasn't changed between
-//  endorsement time and commit time, aka 'phantom reads'.
-// Therefore, rich queries should not be used in update transactions, unless the
-// application handles the possibility of result set changes between endorsement and commit time.
-// Rich queries can be used for point-in-time queries against a peer.
-// ============================================================================================
-
 // ===== Example: Parameterized rich query =================================================
 // queryProductsByOwner queries for products based on a passed in owner.
 // This is an example of a parameterized query where the query logic is baked into the chaincode,
@@ -551,6 +365,19 @@ func (t *SimpleChaincode) queryProductsByOwner(stub shim.ChaincodeStubInterface,
 	}
 	return shim.Success(queryResults)
 }
+
+// =======Rich queries =========================================================================
+// Two examples of rich queries are provided below (parameterized query and ad hoc query).
+// Rich queries pass a query string to the state database.
+// Rich queries are only supported by state database implementations
+//  that support rich query (e.g. CouchDB).
+// The query string is in the syntax of the underlying state database.
+// With rich queries there is no guarantee that the result set hasn't changed between
+//  endorsement time and commit time, aka 'phantom reads'.
+// Therefore, rich queries should not be used in update transactions, unless the
+// application handles the possibility of result set changes between endorsement and commit time.
+// Rich queries can be used for point-in-time queries against a peer.
+// ============================================================================================
 
 // ===== Example: Ad hoc rich query ========================================================
 // queryProducts uses a query string to perform a query for products.
@@ -773,4 +600,11 @@ var checkNewState = func(states map[int][]int, stateOld int, stateNew int) (chec
 		}
 	}
 	return
+}
+
+func main() {
+	err := shim.Start(new(SimpleChaincode))
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
