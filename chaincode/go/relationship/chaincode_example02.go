@@ -30,9 +30,9 @@ const (
 var logger = shim.NewLogger("OwnershipChaincode")
 
 type TransferDetailsKey struct {
-	ProductKey      string `json:"product_key"`
-	RequestSender   string `json:"request_sender"`
-	RequestReceiver string `json:"request_receiver"`
+	ProductKey      string `json:"productKey"`
+	RequestSender   string `json:"requestSender"`
+	RequestReceiver string `json:"requestReceiver"`
 }
 
 type TransferDetailsValue struct {
