@@ -13,7 +13,7 @@ import (
 	"net/url"
 	)
 
-var logger = shim.NewLogger("SimpleChaincode")
+var logger = shim.NewLogger("ProductChaincode")
 
 const (
 	productIndex = "product"
@@ -31,8 +31,8 @@ const (
 	stateInactive
 )
 
-// SimpleChaincode example simple Chaincode implementation
-type SimpleChaincode struct {
+// ProductChaincode example simple Chaincode implementation
+type ProductChaincode struct {
 }
 
 type Product struct {
@@ -61,14 +61,14 @@ var productStateMachine = map[int][]int{
 
 // Init initializes chaincode
 // ===========================
-func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
+func (t *ProductChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Debug("Init")
 	return shim.Success(nil)
 }
 
 // Invoke - Our entry point for Invocations
 // ========================================
-func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
+func (t *ProductChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Debug("Invoke")
 
 	function, args := stub.GetFunctionAndParameters()
@@ -100,7 +100,7 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 // ============================================================
 // initProduct - create a new product, store into chaincode state
 // ============================================================
-func (t *SimpleChaincode) initProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *ProductChaincode) initProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	var err error
 
 	//   0      1               2             3       4
@@ -146,7 +146,7 @@ func (t *SimpleChaincode) initProduct(stub shim.ChaincodeStubInterface, args []s
 		Key:   ProductKey{productName},
 		Value: ProductValue{productIndex,desc, state, lastUpdated, owner},
 	}
-	productJSONasBytes, err := json.Marshal(product)
+	productJSONasBytes, err := json.Marshal(product.Value)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -155,7 +155,12 @@ func (t *SimpleChaincode) initProduct(stub shim.ChaincodeStubInterface, args []s
 	//productJSONasBytes := []byte(productJSONasString)
 
 	// === Save product to state ===
-	err = stub.PutState(productName, productJSONasBytes)
+	compositeKey, err := stub.CreateCompositeKey(productIndex, []string{product.Key.Name})
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	err = stub.PutState(compositeKey, productJSONasBytes)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -182,7 +187,7 @@ func (t *SimpleChaincode) initProduct(stub shim.ChaincodeStubInterface, args []s
 // ============================================================
 // updateProduct - update a existing product, store into chaincode state
 // ============================================================
-func (t *SimpleChaincode) updateProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *ProductChaincode) updateProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	var err error
 
 	//   0      1               2             3       4
@@ -234,8 +239,13 @@ func (t *SimpleChaincode) updateProduct(stub shim.ChaincodeStubInterface, args [
 	productToUpdate.Value.Owner = newOwner
 	productToUpdate.Value.LastUpdated = lastUpdated
 
-	productJSONasBytes, _ := json.Marshal(productToUpdate)
-	err = stub.PutState(productName, productJSONasBytes) //rewrite the product
+	productJSONasBytes, _ := json.Marshal(productToUpdate.Value)
+	compositeKey, err := stub.CreateCompositeKey(productIndex, []string{productToUpdate.Key.Name})
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	err = stub.PutState(compositeKey, productJSONasBytes)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -273,8 +283,8 @@ func (t *SimpleChaincode) updateProduct(stub shim.ChaincodeStubInterface, args [
 // ===============================================
 // readProduct - read a product from chaincode state
 // ===============================================
-func (t *SimpleChaincode) readProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	var name, jsonResp string
+func (t *ProductChaincode) readProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	var name string
 	var err error
 
 	if len(args) < 1 {
@@ -282,62 +292,74 @@ func (t *SimpleChaincode) readProduct(stub shim.ChaincodeStubInterface, args []s
 	}
 
 	name = args[0]
-	valAsbytes, err := stub.GetState(name) //get the product from chaincode state
+	compositeKey, err := stub.CreateCompositeKey(productIndex, []string{name})
 	if err != nil {
-		jsonResp = "{\"Error\":\"Failed to get state for " + name + "\"}"
-		return shim.Error(jsonResp)
-	} else if valAsbytes == nil {
-		jsonResp = "{\"Error\":\"Prodcut does not exist: " + name + "\"}"
-		return shim.Error(jsonResp)
+		return shim.Error(err.Error())
 	}
 
-	return shim.Success(valAsbytes)
+	stateAsBytes, err := stub.GetState(compositeKey) //get the product from chaincode state
+	if err != nil {
+		return shim.Error(fmt.Sprintf("failed to get state for product %s", name))
+	} else if stateAsBytes == nil {
+		return shim.Error(fmt.Sprintf("product %s doesn't exist", name))
+	}
+
+	product := Product{
+		Key: ProductKey{name},
+	}
+	if err := json.Unmarshal(stateAsBytes, &product.Value); err != nil {
+		return shim.Error(err.Error())
+	}
+
+	result, _ := json.Marshal(product)
+
+	return shim.Success(result)
 }
 
 // ==================================================
 // delete - remove a product key/value pair from state
 // ==================================================
-func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	var jsonResp string
-	var productJSON Product
-	if len(args) < 1 {
-		return shim.Error("Incorrect number of arguments. Expecting 1")
-	}
-	productName := args[0]
-
-	// to maintain the state~name index, we need to read the product first and get its state
-	valAsbytes, err := stub.GetState(productName) //get the product from chaincode state
-	if err != nil {
-		jsonResp = "{\"Error\":\"Failed to get state for " + productName + "\"}"
-		return shim.Error(jsonResp)
-	} else if valAsbytes == nil {
-		jsonResp = "{\"Error\":\"Product does not exist: " + productName + "\"}"
-		return shim.Error(jsonResp)
-	}
-
-	err = json.Unmarshal([]byte(valAsbytes), &productJSON)
-	if err != nil {
-		jsonResp = "{\"Error\":\"Failed to decode JSON of: " + productName + "\"}"
-		return shim.Error(jsonResp)
-	}
-
-	err = stub.DelState(productName) //remove the product from chaincode state
-	if err != nil {
-		return shim.Error("Failed to delete state:" + err.Error())
-	}
-
-	// maintain the index
-	stateIndexKey, err := stub.CreateCompositeKey(stateIndexName,
-		[]string{strconv.Itoa(productJSON.Value.State), productJSON.Key.Name})
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	//  Delete index entry to state.
-	err = stub.DelState(stateIndexKey)
-	if err != nil {
-		return shim.Error("Failed to delete state:" + err.Error())
-	}
+func (t *ProductChaincode) delete(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	//var jsonResp string
+	//var productJSON Product
+	//if len(args) < 1 {
+	//	return shim.Error("Incorrect number of arguments. Expecting 1")
+	//}
+	//productName := args[0]
+	//
+	//// to maintain the state~name index, we need to read the product first and get its state
+	//valAsbytes, err := stub.GetState(productName) //get the product from chaincode state
+	//if err != nil {
+	//	jsonResp = "{\"Error\":\"Failed to get state for " + productName + "\"}"
+	//	return shim.Error(jsonResp)
+	//} else if valAsbytes == nil {
+	//	jsonResp = "{\"Error\":\"Product does not exist: " + productName + "\"}"
+	//	return shim.Error(jsonResp)
+	//}
+	//
+	//err = json.Unmarshal([]byte(valAsbytes), &productJSON)
+	//if err != nil {
+	//	jsonResp = "{\"Error\":\"Failed to decode JSON of: " + productName + "\"}"
+	//	return shim.Error(jsonResp)
+	//}
+	//
+	//err = stub.DelState(productName) //remove the product from chaincode state
+	//if err != nil {
+	//	return shim.Error("Failed to delete state:" + err.Error())
+	//}
+	//
+	//// maintain the index
+	//stateIndexKey, err := stub.CreateCompositeKey(stateIndexName,
+	//	[]string{strconv.Itoa(productJSON.Value.State), productJSON.Key.Name})
+	//if err != nil {
+	//	return shim.Error(err.Error())
+	//}
+	//
+	////  Delete index entry to state.
+	//err = stub.DelState(stateIndexKey)
+	//if err != nil {
+	//	return shim.Error("Failed to delete state:" + err.Error())
+	//}
 	return shim.Success(nil)
 }
 
@@ -347,7 +369,7 @@ func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string
 // and accepting a single query parameter (owner).
 // Only available on state databases that support rich query (e.g. CouchDB)
 // =========================================================================================
-func (t *SimpleChaincode) queryProductsByOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *ProductChaincode) queryProductsByOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
 	//   0
 	// "bob"
@@ -386,7 +408,7 @@ func (t *SimpleChaincode) queryProductsByOwner(stub shim.ChaincodeStubInterface,
 // If this is not desired, follow the queryProductsForOwner example for parameterized queries.
 // Only available on state databases that support rich query (e.g. CouchDB)
 // =========================================================================================
-func (t *SimpleChaincode) queryProducts(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *ProductChaincode) queryProducts(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
 	//   0
 	// "queryString"
@@ -456,7 +478,7 @@ func getQueryResultForQueryString(stub shim.ChaincodeStubInterface, queryString 
 	return result, nil
 }
 
-func (t *SimpleChaincode) getHistoryForProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *ProductChaincode) getHistoryForProduct(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
 	if len(args) < 1 {
 		return shim.Error("Incorrect number of arguments. Expecting 1")
@@ -508,7 +530,7 @@ func (t *SimpleChaincode) getHistoryForProduct(stub shim.ChaincodeStubInterface,
 	return shim.Success(result)
 }
 
-func (t *SimpleChaincode) updateOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *ProductChaincode) updateOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	var err error
 
 	//      0          1         2          3
@@ -557,8 +579,13 @@ func (t *SimpleChaincode) updateOwner(stub shim.ChaincodeStubInterface, args []s
 	productToUpdate.Value.Owner = newOwner
 	productToUpdate.Value.LastUpdated = lastUpdated
 
-	productJSONasBytes, _ := json.Marshal(productToUpdate)
-	err = stub.PutState(productName, productJSONasBytes) //rewrite the product
+	productJSONasBytes, _ := json.Marshal(productToUpdate.Value)
+	compositeKey, err := stub.CreateCompositeKey(productIndex, []string{productToUpdate.Key.Name})
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	err = stub.PutState(compositeKey, productJSONasBytes)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -603,7 +630,7 @@ var checkNewState = func(states map[int][]int, stateOld int, stateNew int) (chec
 }
 
 func main() {
-	err := shim.Start(new(SimpleChaincode))
+	err := shim.Start(new(ProductChaincode))
 	if err != nil {
 		logger.Error(err.Error())
 	}
