@@ -400,6 +400,8 @@ func (t *OwnershipChaincode) history(stub shim.ChaincodeStubInterface, args []st
 			if err := entry.FillFromCompositeKeyParts(compositeKeyParts); err != nil {
 				return shim.Error(err.Error())
 			}
+			
+			entries = append(entries, entry)
 		}
 		historyIterator.Close()
 	}
