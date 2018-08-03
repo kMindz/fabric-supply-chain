@@ -9,6 +9,7 @@ import (
 	"strings"
 	"fmt"
 	"encoding/json"
+	"errors"
 )
 
 var logger = shim.NewLogger("OwnershipChaincode")
@@ -76,30 +77,8 @@ func (t *OwnershipChaincode) sendRequest(stub shim.ChaincodeStubInterface, args 
 		}
 	}
 
-	// TODO: check product existence in common channel
-	// TODO: check ownership
-	type simplifiedProduct struct {
-		Key string `json:"key"`
-		Value struct {
-			Owner string `json:"owner"`
-		} `json:"value"`
-	}
-	response := stub.InvokeChaincode(commonChaincodeName,
-		[][]byte{[]byte("readProduct"), []byte(request.Key.ProductKey)}, commonChannelName)
-	if response.Status >= 400 {
-		return shim.Error(fmt.Sprintf("unable to read product %s from common channel: %s",
-			request.Key.ProductKey, response.Message))
-	} else {
-		var p simplifiedProduct
-		if err := json.Unmarshal(response.Payload, p); err != nil {
-			return shim.Error(fmt.Sprintf("unable to unmarshal response on product %s from common channel",
-				request.Key.ProductKey))
-		}
-
-		if p.Value.Owner != request.Key.RequestReceiver {
-			return shim.Error(fmt.Sprintf("product %s don't belong to organization %s",
-				request.Key.ProductKey, request.Key.RequestReceiver))
-		}
+	if err := checkProductExistenceAndOwnership(stub, request.Key.ProductKey, request.Key.RequestReceiver); err != nil {
+		return shim.Error(err.Error())
 	}
 
 	request.Value.Status = statusInitiated
@@ -117,9 +96,6 @@ func (t *OwnershipChaincode) transferAccepted(stub shim.ChaincodeStubInterface, 
 		return shim.Error(fmt.Sprintf("insufficient number of arguments: expected %d, got %d",
 			basicArgumentsNumber, len(args)))
 	}
-
-	// TODO: check product existence in common channel
-	// TODO: check ownership
 
 	details := TransferDetails{}
 	if err := details.FillFromArguments(args); err != nil {
@@ -142,6 +118,11 @@ func (t *OwnershipChaincode) transferAccepted(stub shim.ChaincodeStubInterface, 
 
 	if details.Value.Status != statusInitiated {
 		return shim.Error("ownership transfer wasn't initiated")
+	}
+
+	if err := checkProductExistenceAndOwnership(stub, details.Key.ProductKey, details.Key.RequestReceiver); err != nil {
+		// TODO: think about request deletion
+		return shim.Error(err.Error())
 	}
 
 	details.Value.Status = statusAccepted
@@ -293,6 +274,36 @@ func (t *OwnershipChaincode) history(stub shim.ChaincodeStubInterface, args []st
 	}
 
 	return shim.Success(result)
+}
+
+func checkProductExistenceAndOwnership(stub shim.ChaincodeStubInterface, productKey, requiredOwner string) error {
+	type simplifiedProduct struct {
+		Value struct {
+			Owner string `json:"owner"`
+		} `json:"value"`
+	}
+
+	const queryFunctionName = "readProduct"
+
+	response := stub.InvokeChaincode(commonChaincodeName,
+		[][]byte{[]byte(queryFunctionName), []byte(productKey)}, commonChannelName)
+	if response.Status >= 400 {
+		return errors.New(
+			fmt.Sprintf("unable to read product %s from common channel: %s", productKey, response.Message))
+	} else {
+		var p simplifiedProduct
+		if err := json.Unmarshal(response.Payload, p); err != nil {
+			return errors.New(
+				fmt.Sprintf("unable to unmarshal response on product %s from common channel", productKey))
+		}
+
+		if p.Value.Owner != requiredOwner {
+			return errors.New(
+				fmt.Sprintf("product %s don't belong to organization %s", productKey, requiredOwner))
+		}
+	}
+
+	return nil
 }
 
 func getOrganization(certificate []byte) string {
