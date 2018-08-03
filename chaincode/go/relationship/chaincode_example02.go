@@ -292,7 +292,7 @@ func checkProductExistenceAndOwnership(stub shim.ChaincodeStubInterface, product
 			fmt.Sprintf("unable to read product %s from common channel: %s", productKey, response.Message))
 	} else {
 		var p simplifiedProduct
-		if err := json.Unmarshal(response.Payload, p); err != nil {
+		if err := json.Unmarshal(response.Payload, &p); err != nil {
 			return errors.New(
 				fmt.Sprintf("unable to unmarshal response on product %s from common channel", productKey))
 		}
