@@ -30,8 +30,9 @@ type TransferDetailsKey struct {
 }
 
 type TransferDetailsValue struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 type TransferDetails struct {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 var logger = shim.NewLogger("OwnershipChaincode")
@@ -109,6 +110,7 @@ func (t *OwnershipChaincode) sendRequest(stub shim.ChaincodeStubInterface, args 
 
 	request.Value.Status = statusInitiated
 	request.Value.Message = args[keyFieldsNumber]
+	request.Value.Timestamp = time.Now().UTC().Unix()
 
 	if err := request.UpdateOrInsertIn(stub); err != nil {
 		message := fmt.Sprintf("persistence error: %s", err.Error())
@@ -177,6 +179,7 @@ func (t *OwnershipChaincode) transferAccepted(stub shim.ChaincodeStubInterface, 
 	}
 
 	details.Value.Status = statusAccepted
+	details.Value.Timestamp = time.Now().UTC().Unix()
 
 	if err := details.UpdateOrInsertIn(stub); err != nil {
 		message := fmt.Sprintf("persistence error: %s", err.Error())
@@ -252,6 +255,7 @@ func (t *OwnershipChaincode) transferRejected(stub shim.ChaincodeStubInterface, 
 		logger.Debug("Rejected by sender")
 		details.Value.Status = statusCancelled
 	}
+	details.Value.Timestamp = time.Now().UTC().Unix()
 
 	if err := details.UpdateOrInsertIn(stub); err != nil {
 		message := fmt.Sprintf("persistence error: %s", err.Error())
@@ -445,7 +449,7 @@ func checkProductExistenceAndOwnership(stub shim.ChaincodeStubInterface, product
 
 		if p.Value.Owner != requiredOwner {
 			return errors.New(
-				fmt.Sprintf("product %s don't belong to organization %s", productKey, requiredOwner))
+				fmt.Sprintf("product %s doesn't belong to organization %s", productKey, requiredOwner))
 		}
 	}
 
@@ -466,6 +470,7 @@ func GetCreatorOrganization(stub shim.ChaincodeStubInterface) string {
 }
 
 func main() {
+	fmt.Println(time.Now().UTC().Unix())
 	err := shim.Start(new(OwnershipChaincode))
 	if err != nil {
 		logger.Error(err.Error())
