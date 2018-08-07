@@ -20,6 +20,7 @@ const (
 	statusInitiated = "Initiated"
 	statusAccepted = "Accepted"
 	statusRejected = "Rejected"
+	statusCancelled = "Cancelled"
 )
 
 type TransferDetailsKey struct {

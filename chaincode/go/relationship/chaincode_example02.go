@@ -217,10 +217,12 @@ func (t *OwnershipChaincode) transferRejected(stub shim.ChaincodeStubInterface, 
 		logger.Debug("Details: " + string(bytes))
 	}
 
-	if GetCreatorOrganization(stub) != details.Key.RequestReceiver {
+	creatorIsReceiver := GetCreatorOrganization(stub) == details.Key.RequestReceiver
+	creatorIsSender := GetCreatorOrganization(stub) == details.Key.RequestSender
+
+	if !creatorIsReceiver && !creatorIsSender {
 		message := fmt.Sprintf(
-			"no privileges to reject transfer from the side of organization %s (caller is from organization %s)",
-			details.Key.RequestReceiver, GetCreatorOrganization(stub))
+			"no privileges to reject transfer from the side of organization %s", GetCreatorOrganization(stub))
 		logger.Error(message)
 		return pb.Response{Status: 403, Message: message}
 	}
@@ -243,7 +245,13 @@ func (t *OwnershipChaincode) transferRejected(stub shim.ChaincodeStubInterface, 
 		return shim.Error(message)
 	}
 
-	details.Value.Status = statusRejected
+	if creatorIsReceiver {
+		logger.Debug("Rejected by receiver")
+		details.Value.Status = statusRejected
+	} else if creatorIsSender {
+		logger.Debug("Rejected by sender")
+		details.Value.Status = statusCancelled
+	}
 
 	if err := details.UpdateOrInsertIn(stub); err != nil {
 		message := fmt.Sprintf("persistence error: %s", err.Error())
