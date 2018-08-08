@@ -57,8 +57,9 @@ services:
 #    image: altoros/fabric-rest
     image: maxxx1313/fabric-rest
     volumes:
+     - ../middleware:/usr/src/app/middleware
      - ../artifacts:/usr/src/artifacts
-     - ../server/www-admin:/usr/src/app/www
+     - ../client/build:/usr/src/app/www
     command: sh -c "npm start"
 
   www-base:

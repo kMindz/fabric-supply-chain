@@ -1,0 +1,36 @@
+.close-btn {
+  font-size: 2em;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.notification {
+  min-width: 250px; /* Set a default minimum width */
+  max-width: 400px;
+  margin-left: -125px; /* Divide value of min-width by 2 */
+  color: #fff;
+  text-align: center;
+  border-radius: 2px;
+  padding: 16px;
+  position: fixed;
+  z-index: 30;
+  right: 20px;
+  top: 50px;
+}
+
+.notification.fadein {
+  animation: fadein 0.5s;
+}
+.notification.fadeout {
+  animation: fadeout 0.5s;
+}
+
+@keyframes fadein {
+  from {top: 0; opacity: 0;}
+  to {top: 50px; opacity: 1;}
+}
+
+@keyframes fadeout {
+  from {top: 50px; opacity: 1;}
+  to {top: 0; opacity: 0;}
+}
