@@ -123,7 +123,7 @@ class ProductsPage extends React.Component {
               <i className="fas fa-fw fa-pen"/>
             </button>)
             }
-            {row.original.value.owner !== user.org && row.original.value.state === 1 && (
+            {row.original.value.owner !== user.org && (
               <button className="btn btn-sm btn-primary" title="Request"
                       onClick={Modal.open.bind(this, modalIds.addRequest, row.original)}>
                 <i className="fas fa-fw fa-plus"/>
