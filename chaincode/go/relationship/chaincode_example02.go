@@ -37,6 +37,8 @@ func (t *OwnershipChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Respons
 
 	if function == "sendRequest" {
 		return t.sendRequest(stub, args)
+	} else if function == "editRequest" {
+		return t.editRequest(stub, args)
 	} else if function == "transferAccepted" {
 		return t.transferAccepted(stub, args)
 	} else if function == "transferRejected" {
@@ -109,7 +111,7 @@ func (t *OwnershipChaincode) sendRequest(stub shim.ChaincodeStubInterface, args 
 	}
 
 	request.Value.Status = statusInitiated
-	request.Value.Message = args[keyFieldsNumber]
+	request.Value.Message = args[basicArgumentsNumber]
 	request.Value.Timestamp = time.Now().UTC().Unix()
 
 	if err := request.UpdateOrInsertIn(stub); err != nil {
@@ -120,6 +122,72 @@ func (t *OwnershipChaincode) sendRequest(stub shim.ChaincodeStubInterface, args 
 
 	logger.Info("OwnershipChaincode.sendRequest exited without errors")
 	logger.Debug("Success: OwnershipChaincode.sendRequest")
+	return shim.Success(nil)
+}
+
+func (t *OwnershipChaincode) editRequest(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	logger.Info("OwnershipChaincode.editRequest is running")
+	logger.Debug("OwnershipChaincode.editRequest")
+
+	const expectedArgumentsNumber = basicArgumentsNumber + 1
+
+	if len(args) < expectedArgumentsNumber {
+		message := fmt.Sprintf("insufficient number of arguments: expected %d, got %d",
+			expectedArgumentsNumber, len(args))
+		logger.Error(message)
+		return shim.Error(message)
+	}
+
+	request := TransferDetails{}
+	if err := request.FillFromArguments(args); err != nil {
+		message := fmt.Sprintf("cannot read transfer details from arguments: %s", err.Error())
+		logger.Error(message)
+		return shim.Error(message)
+	}
+
+	if bytes, err := json.Marshal(request); err == nil {
+		logger.Debug("Request: " + string(bytes))
+	}
+
+	if GetCreatorOrganization(stub) != request.Key.RequestSender {
+		message := fmt.Sprintf(
+			"no privileges to edit request from the side of organization %s (caller is from organization %s)",
+			request.Key.RequestSender, GetCreatorOrganization(stub))
+		logger.Error(message)
+		return pb.Response{Status: 403, Message: message}
+	}
+
+	logger.Debug("RequestSender: " + request.Key.RequestSender)
+
+	if !request.ExistsIn(stub) {
+		message := "ownership transfer wasn't initiated"
+		logger.Error(message)
+		return shim.Error(message)
+	}
+
+	if err := request.LoadFrom(stub); err != nil {
+		message := fmt.Sprintf("cannot load existing transfer details: %s", err.Error())
+		logger.Error(message)
+		return pb.Response{Status: 404, Message: message}
+	}
+
+	if request.Value.Status != statusInitiated {
+		message := "ownership transfer wasn't initiated"
+		logger.Error(message)
+		return shim.Error(message)
+	}
+
+	request.Value.Message = args[basicArgumentsNumber]
+	request.Value.Timestamp = time.Now().UTC().Unix()
+
+	if err := request.UpdateOrInsertIn(stub); err != nil {
+		message := fmt.Sprintf("persistence error: %s", err.Error())
+		logger.Error(message)
+		return pb.Response{Status: 500, Message: message}
+	}
+
+	logger.Info("OwnershipChaincode.editRequest exited without errors")
+	logger.Debug("Success: OwnershipChaincode.editRequest")
 	return shim.Success(nil)
 }
 
@@ -470,7 +538,6 @@ func GetCreatorOrganization(stub shim.ChaincodeStubInterface) string {
 }
 
 func main() {
-	fmt.Println(time.Now().UTC().Unix())
 	err := shim.Start(new(OwnershipChaincode))
 	if err != nil {
 		logger.Error(err.Error())
