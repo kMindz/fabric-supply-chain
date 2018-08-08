@@ -6,6 +6,13 @@ import {productActions, modalActions} from '../_actions';
 import {AddProduct, AddRequest, HistoryTable, Modal} from '../_components';
 import {productStates, orgConstants} from '../_constants';
 
+const modalIds = {
+  addProduct: 'addProduct',
+  editProduct: 'editProduct',
+  history: 'history',
+  addRequest: 'addRequest'
+};
+
 const productHistoryColumns = [{
   Header: 'Owner',
   id: 'value.owner',
@@ -48,24 +55,35 @@ class ProductsPage extends React.Component {
   constructor() {
     super();
 
-    this.handleOpenModal = this.handleOpenModal.bind(this);
     this.loadHistory = this.loadHistory.bind(this);
     this.refreshData = this.refreshData.bind(this);
   }
 
-  componentDidMount() {
-    this.refreshData();
-  }
-
-  componentWillReceiveProps(nextProps) {
-    const {history} = nextProps.modals;
-    if (history.show && nextProps.products.history) {
-      this.historyData = nextProps.products.history[history.object.key.name];
+  componentDidUpdate(prevProps) {
+    const {modals, products, dispatch, requests} = this.props;
+    const modalProps = modals[modalIds.history];
+    if (modalProps.show && products.history) {
+      const {[modalProps.object.key.name]: data} = products.history;
+      const {[modalProps.object.key.name]: prevData} = prevProps.products.history || {};
+      if (prevData !== data) {
+        dispatch(modalActions.setData(modalIds.history, data));
+      }
     }
-  }
 
-  handleOpenModal(modalId, product) {
-    this.props.dispatch(modalActions.show(modalId, product));
+    //1st load
+    if (!prevProps.products.hasOwnProperty('adding')) {
+      this.refreshData();
+    }
+
+    if (products.adding === false) {
+      this.refreshData();
+      dispatch(modalActions.hide(modalIds.addProduct));
+      dispatch(modalActions.hide(modalIds.editProduct));
+    }
+
+    if (requests && requests.adding === false && prevProps.requests.adding !== requests.adding) {
+      dispatch(modalActions.hide(modalIds.addRequest));
+    }
   }
 
   refreshData() {
@@ -84,45 +102,9 @@ class ProductsPage extends React.Component {
     }
 
     const columns = [{
-      Header: 'Owner',
-      id: 'value.owner',
-      accessor: rec => orgConstants[rec.value.owner]
-    }, {
       Header: 'Name',
       accessor: 'key.name'
-    }, {
-      Header: 'Description',
-      accessor: 'value.desc'
-    }, {
-      id: 'state',
-      Header: 'State',
-      accessor: rec => productStates[rec.value.state],
-      filterMethod: (filter, row) => {
-        if (filter.value === "all") {
-          return true;
-        }
-        return productStates[+filter.value] === row.state;
-      },
-      Filter: ({filter, onChange}) =>
-        <select
-          onChange={event => onChange(event.target.value)}
-          style={{width: "100%"}}
-          value={filter ? filter.value : "all"}
-        >
-          <option value="all">All</option>
-          {Object.entries(productStates).map(e => {
-            let [k, v] = e;
-            return (<option value={k}>{v}</option>);
-          })}
-        </select>
-    }, {
-      id: 'lastUpdated',
-      Header: 'Updated',
-      accessor: rec => new Date(rec.value.lastUpdated).toLocaleString(),
-      filterMethod: (filter, row) => {
-        return row.lastUpdated && row.lastUpdated.indexOf(filter.value) > -1;
-      },
-    }, {
+    }, ...productHistoryColumns, {
       id: 'actions',
       Header: 'Actions',
       accessor: 'id',
@@ -131,14 +113,20 @@ class ProductsPage extends React.Component {
       Cell: row => {
         return (
           <div>
-            <button className="btn btn-sm btn-primary" title="History"
-              onClick={this.handleOpenModal.bind(this, 'history', row.original)}>
-              <i className="fas fa-history"/>
+            <button className="btn btn-sm btn-secondary" title="History"
+              onClick={Modal.open.bind(this, modalIds.history, row.original)}>
+              <i className="fas fa-fw fa-clipboard-list"/>
             </button>
+            {row.original.value.owner === user.org &&
+            (<button className="btn btn-sm btn-primary" title="Edit"
+                     onClick={Modal.open.bind(this, modalIds.editProduct, row.original)}>
+              <i className="fas fa-fw fa-pen"/>
+            </button>)
+            }
             {row.original.value.owner !== user.org && row.original.value.state === 1 && (
               <button className="btn btn-sm btn-primary" title="Request"
-                      onClick={this.handleOpenModal.bind(this, 'addRequest', row.original)}>
-                <i className="fas fa-plus"/>
+                      onClick={Modal.open.bind(this, modalIds.addRequest, row.original)}>
+                <i className="fas fa-fw fa-plus"/>
               </button>)}
           </div>
         )
@@ -147,21 +135,24 @@ class ProductsPage extends React.Component {
 
     return (
       <div>
-        <button className="btn btn-primary" onClick={this.handleOpenModal.bind(this, 'addProduct')}>Add new product
+        <button className="btn btn-primary" onClick={Modal.open.bind(this, modalIds.addProduct)}>
+          Add new product
         </button>
         <Modal modalId="history" title="History" large={true} footer={false}>
           <HistoryTable columns={productHistoryColumns}
             loadData={this.loadHistory}
-            data={this.historyData}
             defaultSorted={[
               {
                 id: "lastUpdated",
-                desc: true
+                desc: false
               }
             ]}
           />
         </Modal>
         <Modal modalId="addProduct" title="Add new product">
+          <AddProduct/>
+        </Modal>
+        <Modal modalId="editProduct" title="Edit product">
           <AddProduct/>
         </Modal>
         <Modal modalId="addRequest" title="Request ownership">
@@ -200,12 +191,13 @@ class ProductsPage extends React.Component {
 }
 
 function mapStateToProps(state) {
-  const {products, authentication, modals} = state;
+  const {products, authentication, modals, requests} = state;
   const {user} = authentication;
   return {
     user,
     products,
-    modals
+    modals,
+    requests
   };
 }
 

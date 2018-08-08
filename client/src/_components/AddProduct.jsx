@@ -2,6 +2,7 @@ import React from 'react';
 import {connect} from 'react-redux';
 
 import {productActions} from '../_actions';
+import {productStates} from '../_constants';
 
 class AddProduct extends React.Component {
   constructor(props) {
@@ -15,10 +16,22 @@ class AddProduct extends React.Component {
     this.state = {
       product: {
         name: '',
-        desc: ''
+        desc: '',
+        state: 1,
+        created: false
       },
       submitted: false
     };
+    this._fillProduct();
+  }
+
+  _fillProduct() {
+    if(this.props.initData && this.props.initData.key) {
+      this.state.product.name = this.props.initData.key.name;
+      this.state.product.desc = this.props.initData.value.desc;
+      this.state.product.state = this.props.initData.value.state;
+      this.state.product.created = true;
+    }
   }
 
   handleChange(event) {
@@ -28,7 +41,8 @@ class AddProduct extends React.Component {
       product: {
         ...product,
         [name]: value
-      }
+      },
+      submitted: false
     });
   }
 
@@ -38,7 +52,7 @@ class AddProduct extends React.Component {
     this.setState({submitted: true});
     const {product} = this.state;
     if (product.name) {
-      this.props.dispatch(productActions.add(product));
+      this.props.dispatch(productActions[product.created ? 'edit' : 'add'](product));
     }
   }
 
@@ -52,7 +66,7 @@ class AddProduct extends React.Component {
                  name="name" value={product.name}
                  onChange={this.handleChange}/>
           {submitted && !product.name &&
-          <div className="text-danger form-text">Name is required</div>
+          <div className="text-danger">Name is required</div>
           }
         </div>
         <div>
@@ -60,6 +74,16 @@ class AddProduct extends React.Component {
           <textarea type="text" className="form-control" name="desc" value={product.desc}
                     onChange={this.handleChange}/>
         </div>
+        {product.created && <div>
+          <label htmlFor="state">State</label>
+          <select className="form-control" name="state" value={product.state}
+                  onChange={this.handleChange}>
+            {Object.entries(productStates).map(e => {
+              let [k, v] = e;
+              return (<option value={k}>{v}</option>);
+            })}
+          </select>
+        </div>}
       </form>
     );
   }
@@ -72,5 +96,5 @@ function mapStateToProps(state) {
   }
 }
 
-const connectedAddProduct = connect(mapStateToProps)(AddProduct);
-export {connectedAddProduct as AddProduct};
+const connected = connect(mapStateToProps)(AddProduct);
+export {connected as AddProduct};

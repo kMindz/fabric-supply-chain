@@ -1,6 +1,6 @@
 import React from 'react';
 import {connect} from 'react-redux';
-import {Notification} from '../_components/Notification';
+import {Notification} from '../_components';
 
 class Main extends React.Component {
   render() {

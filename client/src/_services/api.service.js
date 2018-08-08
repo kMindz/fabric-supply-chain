@@ -1,4 +1,4 @@
-import {getHeaders, handleResponse} from '../_helpers/request';
+import {getHeaders, sendRequest} from '../_helpers/request';
 import {configService} from './config.service';
 
 //TODO get from config
@@ -15,8 +15,7 @@ export const channels = {
 
 export function query(channel, chaincode, fcn, args) {
   const requestOptions = {
-    method: 'GET',
-    headers: getHeaders()
+    method: 'GET'
   };
 
   const {org} = configService.get();
@@ -30,15 +29,13 @@ export function query(channel, chaincode, fcn, args) {
   const url = new URL(`${window.location.origin}/channels/${channel}/chaincodes/${chaincode}`);
   Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
 
-  return fetch(url, requestOptions)
-    .then(handleResponse);
+  return sendRequest(url, requestOptions);
 }
 
 export function invoke(channel, chaincode, functionName, args) {
   const {org} = configService.get();
   const requestOptions = {
     method: 'POST',
-    headers: getHeaders(),
     body: JSON.stringify({
       peers: [`${org}/peer0`],
       fcn: functionName,
@@ -46,27 +43,22 @@ export function invoke(channel, chaincode, functionName, args) {
     })
   };
 
-  return fetch(`/channels/${channel}/chaincodes/${chaincode}`, requestOptions)
-    .then(handleResponse);
+  return sendRequest(`/channels/${channel}/chaincodes/${chaincode}`, requestOptions);
 }
 
 export function login(user) {
   const requestOptions = {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({username: user.name, orgName: user.org})
   };
 
-  return fetch(`/users`, requestOptions)
-    .then(handleResponse);
+  return sendRequest(`/users`, requestOptions);
 }
 
 export function config() {
   const requestOptions = {
-    method: 'GET',
-    headers: {'Content-Type': 'application/json'}
+    method: 'GET'
   };
 
-  return fetch(`/config`, requestOptions)
-    .then(handleResponse);
+  return sendRequest(`/config`, requestOptions);
 }

@@ -1,12 +1,12 @@
 import React from 'react';
 import {Route, Switch, HashRouter} from 'react-router-dom';
 import {connect} from 'react-redux';
+import {ScaleLoader} from 'react-spinners';
 
 import {history} from '../_helpers';
 import {alertActions, configActions} from '../_actions';
 import {Footer, Header, Main} from '../Layout';
 import {publicRoutes, privateRoutes} from './routes';
-import {ScaleLoader} from 'react-spinners';
 
 class App extends React.Component {
   constructor(props) {
@@ -21,7 +21,8 @@ class App extends React.Component {
   }
 
   render() {
-    if (!this.props.config) {
+    const {config, loading} = this.props;
+    if (!config) {
       return null;
     }
 
@@ -38,10 +39,10 @@ class App extends React.Component {
                 render={(route) =>
                   <div>
                     <Header route={route}/>
-                    <div className={'overlay d-flex justify-content-center align-items-center ' + (!!this.props.loading ? 'visible' : 'invisible')}>
-                      <ScaleLoader loading={!!this.props.loading} />
+                    <div className={'overlay d-flex justify-content-center align-items-center ' + (!!loading ? 'visible' : 'invisible')}>
+                      <ScaleLoader loading={!!loading} />
                     </div>
-                    <Main component={component} route={route} config={this.props.config}/>
+                    <Main component={component} route={route} config={config}/>
                     <Footer/>
                   </div>}
               />

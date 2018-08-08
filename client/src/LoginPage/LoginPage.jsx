@@ -23,7 +23,7 @@ class LoginPage extends React.Component {
 
   handleChange(e) {
     const {name, value} = e.target;
-    this.setState({[name]: value});
+    this.setState({[name]: value, submitted: false});
   }
 
   handleSubmit(e) {
@@ -44,11 +44,11 @@ class LoginPage extends React.Component {
       <div className="col-md-6 offset-md-3">
         <h2>Login</h2>
         <form name="form" onSubmit={this.handleSubmit}>
-          <div className={'form-group' + (submitted && !username ? ' has-error' : '')}>
+          <div className="form-group">
             <label htmlFor="username">Username</label>
-            <input type="text" className="form-control" name="username" value={username} onChange={this.handleChange}/>
+            <input type="text" className={'form-control ' + (submitted && !username && 'is-invalid')} name="username" value={username} onChange={this.handleChange}/>
             {submitted && !username &&
-            <div className="help-block">Username is required</div>
+            <div className="text-danger">Username is required</div>
             }
           </div>
           <div className="form-group">

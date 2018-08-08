@@ -1,10 +1,11 @@
 import {requestConstants} from '../_constants';
 import {requestService} from '../_services';
-import {alertActions, modalActions} from './';
+import {alertActions} from './';
 
 export const requestActions = {
   getAll,
   add,
+  edit,
   accept,
   reject,
   history
@@ -45,7 +46,6 @@ function add(product, comment) {
       .then(
         _ => {
           dispatch(success());
-          dispatch(modalActions.hide('addRequest'));
           dispatch(alertActions.success('Request was initiated'));
         },
         error => {
@@ -65,6 +65,35 @@ function add(product, comment) {
 
   function failure(error) {
     return {type: requestConstants.ADD_FAILURE, error}
+  }
+}
+
+function edit(req, comment) {
+  return dispatch => {
+    dispatch(request());
+    requestService.edit(req, comment)
+      .then(
+        product => {
+          dispatch(success());
+          dispatch(alertActions.success('Request was updated'));
+        },
+        error => {
+          dispatch(failure(error.toString()));
+          dispatch(alertActions.error(error.toString()));
+        }
+      );
+  };
+
+  function request() {
+    return {type: requestConstants.EDIT_REQUEST}
+  }
+
+  function success() {
+    return {type: requestConstants.EDIT_SUCCESS}
+  }
+
+  function failure(error) {
+    return {type: requestConstants.EDIT_FAILURE, error}
   }
 }
 

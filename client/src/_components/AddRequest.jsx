@@ -10,14 +10,23 @@ class AddRequest extends React.Component {
     this.state = {
       request: {
         comment: '',
+        created: false
       },
       submitted: false
     };
+    this._fillRequest();
 
     this.handleChange = this.handleChange.bind(this);
     this.handleSubmit = this.handleSubmit.bind(this);
 
     this.props.setSubmitFn && this.props.setSubmitFn(this.handleSubmit);
+  }
+
+  _fillRequest() {
+    if(this.props.initData && this.props.initData.key.productKey) {
+      this.state.request.comment = this.props.initData.value.message;
+      this.state.request.created = true;
+    }
   }
 
   handleChange(event) {
@@ -27,7 +36,8 @@ class AddRequest extends React.Component {
       request: {
         ...request,
         [name]: value
-      }
+      },
+      submitted: false
     });
   }
 
@@ -37,7 +47,7 @@ class AddRequest extends React.Component {
     this.setState({submitted: true});
     const {request} = this.state;
     if (request.comment) {
-      this.props.dispatch(requestActions.add(this.props.modal.object, request.comment));
+      this.props.dispatch(requestActions[request.created ? 'edit' : 'add'](this.props.initData, request.comment));
     }
   }
 

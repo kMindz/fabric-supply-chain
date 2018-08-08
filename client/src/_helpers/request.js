@@ -6,12 +6,29 @@ function _parseMessage(input = '') {
   return detailedMsg;
 }
 
-export function handleResponse(response) {
+export function sendRequest(url, options) {
+  options.headers = getHeaders(options.headers);
+  return fetch(url, options)
+    .then(handleResponse)
+    .catch(e => {
+      if (e.status === 401) {
+        //try to resend a request
+        return authService.obtainToken()
+          .then(() => {
+            options.headers = getHeaders(options.headers);
+            return fetch(url, options);
+          })
+          .then(handleResponse);
+      }
+      return Promise.reject(e);
+    });
+}
+
+function handleResponse(response) {
   return response.json().then(data => {
     if (!response.ok) {
       if (response.status === 401) {
-        return authService.obtainToken()
-          .catch(Promise.reject);
+        return Promise.reject(response);
       }
 
       const error = (data && data.message && _parseMessage(data.message)) || response.statusText;

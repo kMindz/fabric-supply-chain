@@ -29,6 +29,18 @@ export function products(state = {items: []}, action) {
       return {...state, ...{
         error: action.error
       }};
+    case productConstants.EDIT_REQUEST:
+      return {...state, ...{
+        adding: true
+      }};
+    case productConstants.EDIT_SUCCESS:
+      return {...state, ...{
+        adding: false
+      }};
+    case productConstants.EDIT_FAILURE:
+      return {...state, ...{
+        error: action.error
+      }};
     case productConstants.HISTORY_REQUEST:
       return {...state, ...{
         loading: true

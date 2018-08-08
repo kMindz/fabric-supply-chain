@@ -3,27 +3,33 @@ import ReactTable from 'react-table';
 import {connect} from 'react-redux';
 
 import {requestActions, modalActions} from '../_actions';
-import {HistoryTable, Modal} from '../_components';
+import {HistoryTable, AddRequest, Modal} from '../_components';
 import {orgConstants} from '../_constants';
+
+const classMap = {
+  'Initiated': '',
+  'Accepted': 'success',
+  'Rejected': 'danger',
+  'Cancelled': 'warning'
+};
+
+const modalIds = {
+  editRequest: 'editRequest',
+  history: 'historyReq'
+};
 
 const requestHistoryColumns = [{
   Header: 'Request Sender',
   id: 'key.requestSender',
   accessor: rec => orgConstants[rec.key.requestSender]
 }, {
-  Header: 'Request Receiver',
+  Header: 'Product owner',
   id: 'key.requestReceiver',
   accessor: rec => orgConstants[rec.key.requestReceiver]
 }, {
   Header: 'Status',
   accessor: 'value.status',
   Cell: row => {
-    const classMap = {
-      'Initiated': '',
-      'Accepted': 'success',
-      'Rejected': 'danger',
-      'Cancelled': 'warning'
-    };
     return (<div className={'bg-' + classMap[row.value]}>{row.value}</div>);
   },
   filterMethod: (filter, row) => {
@@ -39,7 +45,7 @@ const requestHistoryColumns = [{
       value={filter ? filter.value : "all"}
     >
       <option value="all">All</option>
-      {['Initiated', 'Accepted', 'Rejected', 'Cancelled'].map(v => {
+      {Object.keys(classMap).map(v => {
         return (<option value={v}>{v}</option>);
       })}
     </select>
@@ -52,6 +58,9 @@ const requestHistoryColumns = [{
   accessor: rec => new Date(rec.value.timestamp * 1000).toLocaleString(),
   filterMethod: (filter, row) => {
     return row.timestamp && row.timestamp.indexOf(filter.value) > -1;
+  },
+  sortMethod: (a, b) => {
+    return a && b && new Date(a).getTime() > new Date(b).getTime() ? 1 : -1;
   }
 }];
 
@@ -59,38 +68,40 @@ class RequestsPage extends React.Component {
   constructor() {
     super();
 
-    this.handleOpenModal = this.handleOpenModal.bind(this);
     this.loadHistory = this.loadHistory.bind(this);
     this.refreshData = this.refreshData.bind(this);
-  }
-
-  componentDidMount() {
-    this.refreshData();
-
     this.acceptRequest = this.acceptRequest.bind(this);
     this.rejectRequest = this.rejectRequest.bind(this);
   }
 
-  componentWillReceiveProps(nextProps) {
-    const {requests, dispatch, modals} = nextProps;
-    if (requests.adding === false) {
+  componentDidUpdate(prevProps) {
+    const {requests, modals, dispatch} = this.props;
+    if (modals) {
+      const modalProps = modals[modalIds.history];
+      if (modalProps && modalProps.show && requests.history) {
+        const {[modalProps.object.key.productKey]: data} = requests.history;
+        const {[modalProps.object.key.productKey]: prevData} = prevProps.requests.history || {};
+        if (prevData !== data) {
+          dispatch(modalActions.setData(modalIds.history, data));
+        }
+      }
+    }
+
+
+
+    if (!requests.hasOwnProperty('adding')) {
       this.refreshData();
     }
 
-    if (modals) {
-      const {historyReq} = modals;
-      if (historyReq && historyReq.show && nextProps.requests.history) {
-        this.historyData = nextProps.requests.history[historyReq.object.key.productKey];
-      }
+    if (this.props.requests.adding === false) {
+      this.refreshData();
+      this.props.dispatch(modalActions.hide(modalIds.history));
+      this.props.dispatch(modalActions.hide(modalIds.editRequest));
     }
   }
 
   refreshData() {
     this.props.dispatch(requestActions.getAll());
-  }
-
-  handleOpenModal(modalId, product) {
-    this.props.dispatch(modalActions.show(modalId, product));
   }
 
   loadHistory(request) {
@@ -107,40 +118,7 @@ class RequestsPage extends React.Component {
     const columns = [{
       Header: 'Name',
       accessor: 'key.productKey'
-    }, {
-      Header: 'Product owner',
-      id: 'key.requestReceiver',
-      accessor: rec => orgConstants[rec.key.requestReceiver]
-    }, {
-      Header: 'Requester',
-      id: 'key.requestSender',
-      accessor: rec => orgConstants[rec.key.requestSender]
-    }, {
-      Header: 'Status',
-      accessor: 'value.status',
-      Cell: row => {
-        const classMap = {
-          'Initiated': '',
-          'Accepted': 'success',
-          'Rejected': 'danger',
-          'Cancelled': 'warning'
-        };
-        return (<div className={'bg-' + classMap[row.value]}>{row.value}</div>);
-      }
-    }, {
-      Header: 'Message',
-      accessor: 'value.message'
-    }, {
-      id: 'timestamp',
-      Header: 'Updated',
-      accessor: rec => new Date(rec.value.timestamp * 1000).toLocaleString(),
-      filterMethod: (filter, row) => {
-        return row.timestamp && row.timestamp.indexOf(filter.value) > -1;
-      },
-      sortMethod: (a, b) => {
-        return a && b && new Date(a).getTime() > new Date(b).getTime() ? 1 : -1;
-      }
-    }, {
+    }, ...requestHistoryColumns, {
       id: 'actions',
       Header: 'Actions',
       accessor: 'key.productKey',
@@ -148,10 +126,16 @@ class RequestsPage extends React.Component {
         const record = row.original;
         return (
           <div>
-            <button className="btn btn-sm btn-primary" title="History"
-                    onClick={this.handleOpenModal.bind(this, 'historyReq', row.original)}>
-              <i className="fas fa-fw fa-history"/>
+            <button className="btn btn-sm btn-secondary" title="History"
+                    onClick={Modal.open.bind(this, modalIds.history, row.original)}>
+              <i className="fas fa-fw fa-clipboard-list"/>
             </button>
+            {record.value.status === 'Initiated' && record.key.requestSender === user.org &&
+            (<button className="btn btn-sm btn-primary" title="Edit"
+                     onClick={Modal.open.bind(this, modalIds.editRequest, row.original)}>
+              <i className="fas fa-fw fa-pen"/>
+            </button>)
+            }
             {record.value.status === 'Initiated' && record.key.requestSender === user.org &&
               (<button className="btn btn-sm btn-warning" title="Cancel"
                        onClick={()=>{this.rejectRequest(row.original)}}>
@@ -181,13 +165,15 @@ class RequestsPage extends React.Component {
         <Modal modalId="historyReq" title="History" large={true} footer={false}>
           <HistoryTable columns={requestHistoryColumns}
                         loadData={this.loadHistory}
-                        data={this.historyData}
                         defaultSorted={[
                           {
                             id: "timestamp",
-                            desc: true
+                            desc: false
                           }
                         ]}/>
+        </Modal>
+        <Modal modalId="editRequest" title="Edit Request">
+          <AddRequest/>
         </Modal>
         {requests.items &&
         <ReactTable

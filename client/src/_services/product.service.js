@@ -4,6 +4,7 @@ import {configService} from './config.service';
 export const productService = {
   getAll,
   add,
+  edit,
   history
 };
 
@@ -29,6 +30,16 @@ function add(product) {
     apiService.contracts.reference,
     'initProduct',
     [product.name, product.desc, '1' /*initial state*/, org, Date.now() + '']
+  );
+}
+
+function edit(product) {
+  const {org} = configService.get();
+  return apiService.invoke(
+    apiService.channels.common,
+    apiService.contracts.reference,
+    'updateProduct',
+    [product.name, product.desc, product.state + '', org, Date.now() + '']
   );
 }
 

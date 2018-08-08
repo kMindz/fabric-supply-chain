@@ -3,8 +3,7 @@ import ReactTable from 'react-table';
 
 export class HistoryTable extends React.Component {
   componentDidMount() {
-    //TODO
-    this.props.loadData(this.props.modal.object);
+    this.props.loadData(this.props.initData);
   }
 
   render() {

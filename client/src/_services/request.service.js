@@ -4,6 +4,7 @@ import {configService} from './config.service';
 export const requestService = {
   getAll,
   add,
+  edit,
   accept,
   reject,
   history
@@ -51,6 +52,16 @@ function add(product, comment) {
     apiService.contracts.relationship,
     'sendRequest',
     [product.key.name, org, product.value.owner, comment]
+  );
+}
+
+function edit(request, comment) {
+  const {org} = configService.get();
+  return apiService.invoke(
+    _selectChannelFromRequest(request),
+    apiService.contracts.relationship,
+    'editRequest',
+    [request.key.productKey, org, request.key.requestReceiver, comment]
   );
 }
 

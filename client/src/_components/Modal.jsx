@@ -20,9 +20,9 @@ const customStyles = {
 class Modal extends React.Component {
   constructor(props) {
     super(props);
-    this.handleOpenModal = this.handleOpenModal.bind(this);
     this.handleCloseModal = this.handleCloseModal.bind(this);
     this.setSubmitFn = this.setSubmitFn.bind(this);
+    this.handleSubmit = () => {};
   }
 
   componentDidMount() {
@@ -30,14 +30,12 @@ class Modal extends React.Component {
     dispatch(modalActions.register(modalId));
   }
 
-  setSubmitFn(fn) {
-    this.handleSubmit = fn;
+  static open(modalId, data) {
+    this.props.dispatch(modalActions.show(modalId, data));
   }
 
-
-  handleOpenModal (object) {
-    const {modalId, dispatch} = this.props;
-    dispatch(modalActions.show(modalId, object));
+  setSubmitFn(fn) {
+    this.handleSubmit = fn;
   }
 
   handleCloseModal () {
@@ -62,8 +60,8 @@ class Modal extends React.Component {
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">{this.props.title}</h5>
-                <button type="button" className="close" aria-label="Close">
-                  <span aria-hidden="true" onClick={this.handleCloseModal}>&times;</span>
+                <button type="button" className="close" aria-label="Close" onClick={this.handleCloseModal}>
+                  <span aria-hidden="true">&times;</span>
                 </button>
               </div>
               <div className="modal-body">
@@ -73,6 +71,8 @@ class Modal extends React.Component {
                       return React.cloneElement(child,
                         {
                           setSubmitFn: this.setSubmitFn,
+                          data: modalProps.data,
+                          initData: modalProps.object,
                           modal: modalProps,
                           ...this.props
                         });

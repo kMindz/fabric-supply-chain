@@ -1,10 +1,10 @@
 import {productConstants} from '../_constants';
 import {productService} from '../_services';
 import {alertActions} from './';
-import {modalActions} from './modal.actions';
 
 export const productActions = {
   add,
+  edit,
   getAll,
   history
 };
@@ -16,8 +16,6 @@ function add(product) {
       .then(
         product => {
           dispatch(success());
-          dispatch(modalActions.hide('addProduct'));
-          dispatch(getAll());
           dispatch(alertActions.success('Product was added'));
         },
         error => {
@@ -37,6 +35,35 @@ function add(product) {
 
   function failure(error) {
     return {type: productConstants.ADD_FAILURE, error}
+  }
+}
+
+function edit(product) {
+  return dispatch => {
+    dispatch(request());
+    productService.edit(product)
+      .then(
+        product => {
+          dispatch(success());
+          dispatch(alertActions.success('Product was updated'));
+        },
+        error => {
+          dispatch(failure(error.toString()));
+          dispatch(alertActions.error(error.toString()));
+        }
+      );
+  };
+
+  function request() {
+    return {type: productConstants.EDIT_REQUEST}
+  }
+
+  function success() {
+    return {type: productConstants.EDIT_SUCCESS}
+  }
+
+  function failure(error) {
+    return {type: productConstants.EDIT_FAILURE, error}
   }
 }
 

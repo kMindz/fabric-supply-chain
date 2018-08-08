@@ -17,6 +17,30 @@ export function requests(state = {}, action) {
         error: action.error,
         loading: false
       }};
+    case requestConstants.ADD_REQUEST:
+      return {...state, ...{
+        adding: true
+      }};
+    case requestConstants.ADD_SUCCESS:
+      return {...state, ...{
+        adding: false
+      }};
+    case requestConstants.ADD_FAILURE:
+      return {...state, ...{
+        error: action.error
+      }};
+    case requestConstants.EDIT_REQUEST:
+      return {...state, ...{
+        adding: true
+      }};
+    case requestConstants.EDIT_SUCCESS:
+      return {...state, ...{
+        adding: false
+      }};
+    case requestConstants.EDIT_FAILURE:
+      return {...state, ...{
+        error: action.error
+      }};
     case requestConstants.ACCEPT_REQUEST:
       return {...state, ...{
         loading: true
