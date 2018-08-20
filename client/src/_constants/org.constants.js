@@ -1,5 +1,5 @@
 export const orgConstants = {
-  a: 'BMW Munich',
+  a: 'Vendor',
   b: 'EMEA dealer',
   c: 'Service center UAE'
 };
