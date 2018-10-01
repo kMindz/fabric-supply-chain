@@ -162,7 +162,7 @@ function getBlockInstructions(block, eventName){
 
 
 function getTransactionType(blockData) {
-  return blockData.payload.header.channel_header.type;
+  return blockData.payload.header.channel_header.typeString;
 }
 
 
