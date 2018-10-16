@@ -53,7 +53,7 @@ services:
     working_dir: /etc/hyperledger/artifacts
 
   api-base:
-    image: dockeraltoros/fabric-rest
+    image: dockeraltoros/fabric-rest:0.12.1
     volumes:
      - ../middleware:/usr/src/app/middleware
      - ../artifacts:/usr/src/artifacts
